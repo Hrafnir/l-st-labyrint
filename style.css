@@ -1,4 +1,4 @@
-/* Version: #14 */
+/* Version: #18 */
 
 :root {
     --bg-color: #f4f4f9;
@@ -17,7 +17,7 @@ body {
     margin: 0;
     padding: 20px;
     color: var(--text);
-    user-select: none; /* Hindre tekstmarkering mens man tegner */
+    user-select: none;
 }
 
 h1 { margin: 0; font-size: 2rem; }
@@ -107,4 +107,4 @@ button.active {
 button#btn-set-start { background-color: #e8f8f5; border-color: #2ecc71; color: #27ae60; }
 button#btn-set-goal { background-color: #fdedec; border-color: #e74c3c; color: #c0392b; }
 
-/* Version: #14 */
+/* Version: #18 */
