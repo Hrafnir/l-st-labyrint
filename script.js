@@ -1,4 +1,4 @@
-/* Version: #15 */
+/* Version: #16 */
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('game-canvas');
@@ -25,13 +25,14 @@ document.addEventListener('DOMContentLoaded', () => {
         black: '#2c3e50',
         player: '#27ae60',
         point: '#555',
+        pointSelected: '#e67e22',
         outside: '#f9f9f9',
         inside: '#eef',
         highlight: 'rgba(52, 152, 219, 0.2)',
         selected: 'rgba(241, 196, 15, 0.4)'
     };
     const POINT_RADIUS = 6;
-    const CLICK_TOLERANCE = 10;
+    const CLICK_TOLERANCE = 12;
 
     // Data Model
     let points = []; // {id, x, y}
@@ -44,9 +45,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Interaction State
     let draggingPoint = null;
-    let wallStartPoint = null;
+    let wallStartPoint = null; // Første punkt i en vegg-konstruksjon
     let selectedRoomId = null;
     let hoverWall = null;
+    let mousePos = {x:0, y:0}; // For å tegne hjelpelinje
     
     // Game State
     let currentRoomId = null;
@@ -92,6 +94,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // === MODES & TOOLS ===
     function setMode(newMode) {
         mode = newMode;
+        // Reset interaction states
+        wallStartPoint = null;
+        draggingPoint = null;
+
         if (mode === 'play') {
             btnModePlay.classList.add('active');
             btnModeEdit.classList.remove('active');
@@ -99,7 +105,7 @@ document.addEventListener('DOMContentLoaded', () => {
             statusText.textContent = "Spillmodus: Klikk på en vegg for å gå.";
             selectedRoomId = null;
             
-            // Reset game state
+            // Initialiser spill
             const startRoom = rooms.find(r => r.isStart);
             if (startRoom) currentRoomId = startRoom.id;
             else if (rooms.length > 0) currentRoomId = rooms.find(r => r.isOutside)?.id || rooms[0].id;
@@ -109,22 +115,37 @@ document.addEventListener('DOMContentLoaded', () => {
             btnModeEdit.classList.add('active');
             btnModePlay.classList.remove('active');
             editTools.style.display = 'flex';
-            statusText.textContent = "Redigering: Tegn punkter og vegger.";
+            statusText.textContent = "Redigering: Velg verktøy.";
+            // Default til vegg-verktøy da det er mest brukt
+            setTool('wall');
         }
         draw();
     }
 
     function setTool(newTool) {
         tool = newTool;
+        // Reset states når vi bytter verktøy
+        wallStartPoint = null;
+        draggingPoint = null;
+        
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
-        if (tool === 'point') btnToolPoint.classList.add('active');
-        if (tool === 'wall') btnToolWall.classList.add('active');
-        if (tool === 'select') btnToolSelect.classList.add('active');
+        if (tool === 'point') {
+            btnToolPoint.classList.add('active');
+            statusText.textContent = "Punkt-modus: Klikk for å lage nye punkter.";
+        }
+        if (tool === 'wall') {
+            btnToolWall.classList.add('active');
+            statusText.textContent = "Vegg-modus: Klikk på punkt A, flytt musen, klikk på punkt B.";
+        }
+        if (tool === 'select') {
+            btnToolSelect.classList.add('active');
+            statusText.textContent = "Velg-modus: Flytt punkter, endre veggfarge, velg rom.";
+        }
+        draw();
     }
 
-    // === CORE LOGIC: ROOM FINDER (Planar Graph Face Detection) ===
+    // === CORE LOGIC: ROOM FINDER ===
     function recalculateRooms() {
-        // Behold Start/Goal flag hvis mulig
         const oldStart = rooms.find(r => r.isStart);
         const oldGoal = rooms.find(r => r.isGoal);
         const oldStartCenter = oldStart ? oldStart.centroid : null;
@@ -132,8 +153,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         rooms = [];
         
-        // 1. Bygg adjacency list med vinkler
-        // adj[pointId] = [ { neighborId, wallId, angle }, ... ]
+        // 1. Bygg adjacency list
         const adj = {};
         points.forEach(p => adj[p.id] = []);
 
@@ -154,13 +174,13 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // Sorter naboer etter vinkel (Counter-Clockwise)
+        // Sorter naboer etter vinkel
         for (let pid in adj) {
             adj[pid].sort((a, b) => a.angle - b.angle);
         }
 
-        // 2. Traverser grafen for å finne sykluser (Faces)
-        const visitedEdges = new Set(); // Format: "fromId-toId"
+        // 2. Traverser grafen (Faces)
+        const visitedEdges = new Set(); 
 
         for (let pStr in adj) {
             const startNode = parseInt(pStr);
@@ -170,12 +190,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const edgeKey = `${startNode}-${neighbors[i].neighborId}`;
                 
                 if (!visitedEdges.has(edgeKey)) {
-                    // Start en ny syklus-søk
                     const path = [];
                     let curr = startNode;
                     let nextInfo = neighbors[i];
                     
-                    // Gå til vi er tilbake ved startkant
                     while (!visitedEdges.has(`${curr}-${nextInfo.neighborId}`)) {
                         visitedEdges.add(`${curr}-${nextInfo.neighborId}`);
                         path.push(curr);
@@ -183,30 +201,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         const prevNode = curr;
                         curr = nextInfo.neighborId;
                         
-                        // Finn neste kant: Den som kommer "før" den vi kom inn på i sortert liste (CCW)
-                        // Innkommende vinkel er motsatt av utgående fra forrige
-                        // Enklere: Finn kanten som går tilbake til prevNode, ta neste i lista.
                         const currNeighbors = adj[curr];
                         const backIndex = currNeighbors.findIndex(n => n.neighborId === prevNode);
                         
-                        // Neste kant i CCW rekkefølge er (backIndex - 1 + length) % length
-                        // Fordi vinklene er sortert -PI til PI. 
-                        // For å finne "innsiden" av en syklus når vi går CW eller CCW:
-                        // Standard algoritme: Ta neste kant i lista (wrap around).
+                        // Next Edge CCW
                         let nextIndex = (backIndex - 1 + currNeighbors.length) % currNeighbors.length;
                         nextInfo = currNeighbors[nextIndex];
                     }
                     
-                    // En syklus er funnet. Lagre som rom.
                     if (path.length >= 3) {
                         const roomPoints = path.map(pid => points.find(p => p.id === pid));
                         const area = calculateSignedArea(roomPoints);
-                        
-                        // Positivt areal (i canvas koord) betyr vanligvis Clockwise (Inside).
-                        // Negativt betyr Counter-Clockwise (Outside / Hole).
-                        // Men dette avhenger av sorteringen. La oss anta alle sykluser er rom.
-                        // Det rommet med størst areal (eller bounding box) er "Outside".
-                        
                         const centroid = calculateCentroid(roomPoints);
                         
                         rooms.push({
@@ -214,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             pointIds: path,
                             area: area,
                             centroid: centroid,
-                            isOutside: false, // Beregnes etterpå
+                            isOutside: false,
                             isStart: false,
                             isGoal: false
                         });
@@ -223,17 +228,14 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 3. Identifiser "Utsiden"
-        // Utsiden er rommet som omslutter alt. I vår logikk med "Next Edge CCW", vil utsiden
-        // ofte ha motsatt fortegn på areal, eller være det største.
-        // La oss si at rommet med størst absolutt areal er utsiden.
+        // 3. Identifiser Utsiden (størst areal)
         if (rooms.length > 0) {
             rooms.sort((a, b) => Math.abs(b.area) - Math.abs(a.area));
             rooms[0].isOutside = true; 
-            rooms[0].id = 'outside'; // Fast ID for enkelhet
+            rooms[0].id = 'outside';
         }
 
-        // Gjenopprett Start/Mål basert på posisjon
+        // Gjenopprett Start/Mål
         if (oldStartCenter) {
             const r = getRoomAt(oldStartCenter.x, oldStartCenter.y);
             if (r) r.isStart = true;
@@ -243,20 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (r) r.isGoal = true;
         }
 
-        // Hvis ingen start/mål, sett default
-        if (!rooms.some(r => r.isStart) && rooms.length > 0) {
-            // Prøv å sett utsiden som start
-            const out = rooms.find(r => r.isOutside);
-            if (out) out.isStart = true;
-            else rooms[0].isStart = true;
-        }
-        if (!rooms.some(r => r.isGoal) && rooms.length > 1) {
-            // Sett et indre rom som mål
-            const inner = rooms.find(r => !r.isOutside && !r.isStart);
-            if (inner) inner.isGoal = true;
-        }
-
-        roomCountText.textContent = `${rooms.length} Rom (1 Utside + ${rooms.length-1} Inne)`;
+        roomCountText.textContent = `${rooms.length} Rom (1 Utside + ${Math.max(0, rooms.length-1)} Inne)`;
     }
 
     // === GEOMETRY HELPERS ===
@@ -272,7 +261,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function calculateCentroid(pts) {
         let cx = 0, cy = 0;
-        // Enkel gjennomsnitt for visuell plassering
         pts.forEach(p => { cx += p.x; cy += p.y; });
         return { x: cx / pts.length, y: cy / pts.length };
     }
@@ -290,20 +278,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getRoomAt(x, y) {
-        // Sjekk indre rom først (de er "oppå" utsiden)
-        // Siden vi sorterte rooms etter størrelse, ligger de minste (indre) sist?
-        // Nei, vi sorterte største først. Så vi bør iterere baklengs eller sjekke isOutside til slutt.
-        
-        // Sjekk alle rom unntatt Outside først
+        // Sjekk indre rom først
         for (let i = rooms.length - 1; i >= 0; i--) {
             const r = rooms[i];
             if (r.isOutside) continue;
             const pts = r.pointIds.map(id => points.find(p => p.id === id));
             if (isPointInPolygon({x,y}, pts)) return r;
         }
-        
-        // Hvis ikke i noe indre rom, er vi kanskje på utsiden?
-        // Vi antar at hvis vi er innenfor canvas men ikke i et indre rom, er vi på utsiden.
         return rooms.find(r => r.isOutside);
     }
 
@@ -316,118 +297,118 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Edit Mode
+        // --- EDIT MODE ---
+        
         if (tool === 'point') {
+            // Legg til nytt punkt
             addPoint(pos.x, pos.y);
         }
         else if (tool === 'wall') {
+            // Vegg-logikk: Klikk A -> Klikk B
             const p = getClosestPoint(pos.x, pos.y);
+            
             if (p && p.dist < CLICK_TOLERANCE) {
-                wallStartPoint = p.point;
+                // Vi traff et punkt
+                if (!wallStartPoint) {
+                    // Steg 1: Velg startpunkt
+                    wallStartPoint = p.point;
+                    statusText.textContent = "Startpunkt valgt. Klikk på neste punkt.";
+                } else {
+                    // Steg 2: Vi har allerede et startpunkt
+                    if (wallStartPoint !== p.point) {
+                        addWall(wallStartPoint.id, p.point.id);
+                        statusText.textContent = "Vegg laget. Velg nytt startpunkt eller fortsett.";
+                        // Vi beholder IKKE startpunktet for å lage "polylines" automatisk, 
+                        // men nullstiller for å la brukeren velge fritt.
+                        // Alternativt: wallStartPoint = p.point; (for å tegne videre)
+                        wallStartPoint = null; 
+                    } else {
+                        // Klikket på samme punkt igjen -> Avbryt
+                        wallStartPoint = null;
+                        statusText.textContent = "Avbrutt.";
+                    }
+                }
+            } else {
+                // Klikket i løse luften -> Avbryt
+                wallStartPoint = null;
+                statusText.textContent = "Klikk på et punkt for å starte en vegg.";
             }
         }
         else if (tool === 'select') {
-            // 1. Sjekk om vi klikket på et punkt (for å dra)
+            // 1. Dra punkt
             const p = getClosestPoint(pos.x, pos.y);
             if (p && p.dist < CLICK_TOLERANCE) {
                 draggingPoint = p.point;
                 return;
             }
 
-            // 2. Sjekk om vi klikket på en vegg (for å endre farge)
+            // 2. Endre veggfarge
             const w = getClosestWall(pos.x, pos.y);
             if (w && w.dist < CLICK_TOLERANCE) {
                 cycleWallColor(w.wall);
                 return;
             }
 
-            // 3. Velg rom (for start/mål)
+            // 3. Velg rom
             const r = getRoomAt(pos.x, pos.y);
             if (r) {
                 selectedRoomId = r.id;
                 draw();
             }
         }
+        draw();
     }
 
     function handleMouseMove(e) {
-        const pos = getMousePos(e);
+        mousePos = getMousePos(e);
         
         if (mode === 'edit') {
             if (draggingPoint) {
-                draggingPoint.x = pos.x;
-                draggingPoint.y = pos.y;
-                recalculateRooms(); // Live update rooms while dragging? Heavy, but cool.
-                draw();
-            }
-            else if (wallStartPoint) {
-                draw();
-                ctx.beginPath();
-                ctx.moveTo(wallStartPoint.x, wallStartPoint.y);
-                ctx.lineTo(pos.x, pos.y);
-                ctx.strokeStyle = '#999';
-                ctx.stroke();
+                draggingPoint.x = mousePos.x;
+                draggingPoint.y = mousePos.y;
+                // Live update er tungt, men ser bra ut.
+                // For optimalisering: kun tegn punkter/vegger, ikke kjør recalculateRooms her.
+                draw(); 
             }
             else if (tool === 'select') {
-                // Highlight wall hover
-                const w = getClosestWall(pos.x, pos.y);
+                const w = getClosestWall(mousePos.x, mousePos.y);
                 hoverWall = (w && w.dist < CLICK_TOLERANCE) ? w.wall : null;
+                draw();
+            }
+            else if (tool === 'wall' && wallStartPoint) {
+                // Tegn hjelpelinje i draw()
                 draw();
             }
         }
     }
 
     function handleMouseUp(e) {
-        const pos = getMousePos(e);
-        
-        if (mode === 'edit') {
-            if (draggingPoint) {
-                draggingPoint = null;
-            }
-            else if (wallStartPoint) {
-                const p = getClosestPoint(pos.x, pos.y);
-                if (p && p.dist < CLICK_TOLERANCE && p.point !== wallStartPoint) {
-                    addWall(wallStartPoint.id, p.point.id);
-                }
-                wallStartPoint = null;
-                draw();
-            }
+        if (mode === 'edit' && draggingPoint) {
+            draggingPoint = null;
+            recalculateRooms(); // Beregn rom når vi slipper punktet
+            draw();
         }
     }
 
     function handlePlayClick(pos) {
-        // Spilleren klikker på en vegg for å gå gjennom den
         const wObj = getClosestWall(pos.x, pos.y);
         if (!wObj || wObj.dist > CLICK_TOLERANCE) return;
         
         const wall = wObj.wall;
         
-        // Logikk: Er denne veggen en del av rommet vi står i?
-        // En vegg er en del av et rom hvis begge endepunktene er i rommets pointIds liste,
-        // og de er naboer i listen (eller første/siste).
-        // Enklere: Vi vet hvilke to rom veggen skiller ved å sjekke hvilke rom som deler denne veggen.
-        
-        // Finn de to rommene som deler denne veggen
+        // Sjekk om veggen tilhører rommet vi står i
         const adjacentRooms = rooms.filter(r => {
-            // Sjekk om veggens punkter finnes i rommet og er konsekutive
-            // Dette er litt tungt. Bedre: Sjekk om veggen er en del av rommets perimeter.
-            // Enklere: Sjekk om rommet inneholder begge punktene til veggen.
-            // OBS: Dette gjelder for alle diagonaler inne i rommet også. 
-            // Men recalculateRooms lager kun rom av vegger, så det bør holde.
             const hasP1 = r.pointIds.includes(wall.p1);
             const hasP2 = r.pointIds.includes(wall.p2);
             return hasP1 && hasP2; 
-            // Note: Dette kan feile ved komplekse former der en vegg deler et rom i to men ikke er en grense?
-            // Nei, veggene definerer grensene.
         });
 
-        // Sjekk om vi er i ett av disse rommene
         if (!adjacentRooms.some(r => r.id === currentRoomId)) {
             statusText.textContent = "Du må klikke på en vegg i rommet du står i.";
+            shakeCanvas();
             return;
         }
 
-        // Sjekk farge
         if (wall.color === 'black') {
             statusText.textContent = "Svart vegg er stengt.";
             return;
@@ -438,7 +419,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Finn naborommet
         const nextRoom = adjacentRooms.find(r => r.id !== currentRoomId);
         
         if (nextRoom) {
@@ -454,20 +434,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 statusText.style.color = "#333";
             }
             draw();
-        } else {
-            // Vegg mot ingenting? Skal ikke skje med "Outside" logikk, men ok.
-            statusText.textContent = "Denne veggen leder ingen steder (bug?)";
         }
     }
 
-    // === EDITING ACTIONS ===
+    // === ACTIONS ===
     function addPoint(x, y) {
         points.push({ id: Date.now(), x, y });
         draw();
     }
 
     function addWall(p1Id, p2Id) {
-        // Sjekk duplikat
         const exists = walls.find(w => (w.p1 === p1Id && w.p2 === p2Id) || (w.p1 === p2Id && w.p2 === p1Id));
         if (!exists) {
             walls.push({ id: Date.now(), p1: p1Id, p2: p2Id, color: 'red' });
@@ -480,7 +456,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (wall.color === 'red') wall.color = 'blue';
         else if (wall.color === 'blue') wall.color = 'black';
         else if (wall.color === 'black') {
-            // Slett vegg
             walls = walls.filter(w => w.id !== wall.id);
             recalculateRooms();
         }
@@ -492,7 +467,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const r = rooms.find(r => r.id === selectedRoomId);
         if (!r) return;
 
-        // Reset others
         if (type === 'start') rooms.forEach(r => r.isStart = false);
         if (type === 'goal') rooms.forEach(r => r.isGoal = false);
 
@@ -555,10 +529,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function draw() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // 1. Draw Rooms (Backgrounds)
+        // 1. Rooms
         rooms.forEach(r => {
-            if (r.isOutside) return; // Ikke fyll utsiden
-
+            if (r.isOutside) return; 
             const pts = r.pointIds.map(id => points.find(p => p.id === id));
             if (pts.length < 3) return;
 
@@ -567,7 +540,6 @@ document.addEventListener('DOMContentLoaded', () => {
             pts.slice(1).forEach(p => ctx.lineTo(p.x, p.y));
             ctx.closePath();
 
-            // Fill color
             if (r.id === selectedRoomId) ctx.fillStyle = COLORS.selected;
             else ctx.fillStyle = COLORS.inside;
             ctx.fill();
@@ -585,7 +557,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
 
-        // 2. Draw Walls
+        // 2. Walls
         walls.forEach(w => {
             const p1 = points.find(p => p.id === w.p1);
             const p2 = points.find(p => p.id === w.p2);
@@ -611,31 +583,47 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.setLineDash([]);
         });
 
-        // 3. Draw Points (Edit mode)
+        // 3. Points & Helper Lines (Edit mode)
         if (mode === 'edit') {
+            // Hjelpelinje for vegg
+            if (tool === 'wall' && wallStartPoint) {
+                ctx.beginPath();
+                ctx.moveTo(wallStartPoint.x, wallStartPoint.y);
+                ctx.lineTo(mousePos.x, mousePos.y);
+                ctx.strokeStyle = '#333';
+                ctx.setLineDash([5, 5]);
+                ctx.lineWidth = 2;
+                ctx.stroke();
+                ctx.setLineDash([]);
+            }
+
             points.forEach(p => {
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, POINT_RADIUS, 0, 2*Math.PI);
-                ctx.fillStyle = COLORS.point;
+                
+                if (p === wallStartPoint) ctx.fillStyle = COLORS.pointSelected;
+                else ctx.fillStyle = COLORS.point;
+                
                 ctx.fill();
             });
         }
 
-        // 4. Draw Player (Play mode)
+        // 4. Player
         if (mode === 'play' && currentRoomId) {
             const r = rooms.find(r => r.id === currentRoomId);
             if (r) {
-                // Hvis vi er på utsiden, tegn spilleren nær "Start" teksten eller et default sted
-                // For enkelhets skyld, bruk centroid, men for Utsiden er centroid ofte midt i banen.
-                // Vi bør kanskje tegne spilleren ved musen hvis man er ute? Eller bare en indikator.
-                // La oss bruke centroiden uansett, men for utsiden kan det se rart ut.
-                // Fix: Hvis outside, tegn i hjørnet?
+                // Hvis outside, prøv å plasser spilleren nær start-teksten eller et fornuftig sted
                 let x = r.centroid.x;
                 let y = r.centroid.y;
                 
+                // Hack for å vise spilleren på utsiden hvis sentroiden er midt i banen
                 if (r.isOutside) {
-                    // Tegn spilleren litt utenfor banen, f.eks. nede til høyre hvis start er der.
-                    // Vi lar den være i centroiden for nå, men tegner den større.
+                     // Finn et punkt utenfor bounding box av alle indre punkter?
+                     // Enklere: Hvis start er satt på utsiden, tegn den ved siden av START teksten
+                     if (r.isStart) {
+                         x = 100; y = 100; // Default hjørne
+                         // Prøv å finn et punkt nær første vegg?
+                     }
                 }
 
                 ctx.beginPath();
@@ -650,19 +638,20 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createDefaultLevel() {
-        // Enkel firkant med kryss
-        const p1 = Date.now(); points.push({id: p1, x: 200, y: 200});
-        const p2 = p1+1; points.push({id: p2, x: 500, y: 200});
-        const p3 = p1+2; points.push({id: p3, x: 500, y: 500});
-        const p4 = p1+3; points.push({id: p4, x: 200, y: 500});
+        // Rent rutenett av punkter
+        const startX = 150;
+        const startY = 100;
+        const gap = 150;
         
-        walls.push({id: 1, p1: p1, p2: p2, color: 'red'});
-        walls.push({id: 2, p1: p2, p2: p3, color: 'blue'});
-        walls.push({id: 3, p1: p3, p2: p4, color: 'red'});
-        walls.push({id: 4, p1: p4, p2: p1, color: 'blue'});
-        
-        // Kryss
-        walls.push({id: 5, p1: p1, p2: p3, color: 'red'});
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 4; c++) {
+                points.push({
+                    id: Date.now() + Math.random(),
+                    x: startX + c * gap,
+                    y: startY + r * gap
+                });
+            }
+        }
     }
 
     function downloadImage() {
@@ -679,4 +668,4 @@ document.addEventListener('DOMContentLoaded', () => {
     init();
 });
 
-/* Version: #15 */
+/* Version: #16 */
