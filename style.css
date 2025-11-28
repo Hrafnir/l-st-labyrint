@@ -1,0 +1,172 @@
+/* Version: #2 */
+
+:root {
+    --bg-color: #f0f0f0;
+    --board-bg: #ffffff;
+    --wall-color: #222;
+    --wall-thickness: 4px;
+    --cell-size: 50px; /* Standard størrelse, kan overstyres av JS for store brett */
+    --dot-red: #e74c3c;
+    --dot-blue: #3498db;
+    --player-color: #2c3e50;
+    --highlight: #f1c40f;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: var(--bg-color);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin: 0;
+    padding: 20px;
+    min-height: 100vh;
+}
+
+header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+h1 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+
+#status-display {
+    font-size: 1.2rem;
+    font-weight: bold;
+    margin-bottom: 15px;
+    padding: 10px 20px;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    min-height: 1.5em;
+    color: #555;
+}
+
+/* Container som holder brettet sentrert */
+#board-container {
+    padding: 20px;
+    background: white;
+    border-radius: 4px;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+    display: inline-block;
+}
+
+/* Selve spillbrettet (Grid) */
+#game-board {
+    display: grid;
+    /* grid-template-columns settes dynamisk i JS */
+    background-color: var(--board-bg);
+    border: var(--wall-thickness) solid var(--wall-color);
+}
+
+/* Enkelt rute i griden */
+.cell {
+    width: var(--cell-size);
+    height: var(--cell-size);
+    position: relative;
+    box-sizing: border-box; /* Inkluderer border i width/height */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Vegger - Vi bruker borders på cellene for å tegne vegger */
+.cell.wall-top { border-top: var(--wall-thickness) solid var(--wall-color); }
+.cell.wall-right { border-right: var(--wall-thickness) solid var(--wall-color); }
+.cell.wall-bottom { border-bottom: var(--wall-thickness) solid var(--wall-color); }
+.cell.wall-left { border-left: var(--wall-thickness) solid var(--wall-color); }
+
+/* Start og Mål tekst i cellene */
+.cell-start::before {
+    content: "START";
+    font-size: 0.6rem;
+    font-weight: bold;
+    position: absolute;
+    bottom: 2px;
+    color: #27ae60;
+}
+
+.cell-goal::before {
+    content: "MÅL";
+    font-size: 0.6rem;
+    font-weight: bold;
+    position: absolute;
+    top: 2px;
+    color: #c0392b;
+}
+
+/* Porter (Dots) */
+.dot {
+    width: 50%;
+    height: 50%;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.dot.red {
+    background-color: var(--dot-red);
+}
+
+.dot.blue {
+    background-color: var(--dot-blue);
+}
+
+/* Spilleren */
+.player {
+    width: 60%;
+    height: 60%;
+    background-color: var(--player-color);
+    border: 2px solid white;
+    border-radius: 50%;
+    position: absolute;
+    z-index: 10; /* Over dots */
+    box-shadow: 0 0 10px rgba(0,0,0,0.5);
+    transition: top 0.2s, left 0.2s; /* Glatt bevegelse hvis vi bruker absolutt posisjonering senere, eller bare fade in */
+}
+
+/* Indikator for gyldige trekk (for debugging/hjelp) */
+.cell.valid-move {
+    background-color: rgba(46, 204, 113, 0.2);
+    cursor: pointer;
+}
+
+/* Kontrollpanel */
+#controls {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+}
+
+button {
+    padding: 10px 20px;
+    font-size: 1rem;
+    cursor: pointer;
+    background-color: var(--player-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #34495e;
+}
+
+button:disabled {
+    background-color: #bdc3c7;
+    cursor: not-allowed;
+}
+
+#debug-log {
+    margin-top: 20px;
+    font-family: monospace;
+    font-size: 0.8rem;
+    color: #777;
+    white-space: pre-wrap;
+    max-width: 600px;
+}
+
+/* Version: #2 */
