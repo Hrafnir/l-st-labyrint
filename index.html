@@ -1,4 +1,4 @@
-<!-- Version: #13 -->
+<!-- Version: #17 -->
 <!DOCTYPE html>
 <html lang="no">
 <head>
@@ -18,7 +18,7 @@
 
         <div id="status-bar">
             <span id="status-text">Velkommen!</span>
-            <span id="room-count">0 Rom oppdaget</span>
+            <span id="room-count">0 Rom</span>
         </div>
 
         <div id="canvas-wrapper">
@@ -34,19 +34,20 @@
                 <div class="toolbar-group" id="edit-tools" style="display:none;">
                     <strong>Tegn:</strong>
                     <button id="btn-tool-point" class="tool-btn" title="Lag hjørner (punkter)">📍 Punkt</button>
-                    <button id="btn-tool-wall" class="tool-btn" title="Dra mellom punkter">➖ Vegg</button>
-                    <button id="btn-tool-select" class="tool-btn active" title="Velg rom/vegger">👆 Velg/Flytt</button>
+                    <button id="btn-tool-wall" class="tool-btn" title="Klikk A, så Klikk B">➖ Vegg</button>
+                    <button id="btn-tool-select" class="tool-btn active" title="Endre vegger / Flytt punkter">👆 Velg</button>
                     
                     <div class="separator"></div>
                     
-                    <strong>Rom:</strong>
-                    <button id="btn-set-start" title="Sett valgt rom som Start">🏁 Sett Start</button>
-                    <button id="btn-set-goal" title="Sett valgt rom som Mål">🏆 Sett Mål</button>
+                    <strong>Oppsett:</strong>
+                    <button id="btn-set-start" title="Sett valgt rom som Start">🏁 Start</button>
+                    <button id="btn-set-goal" title="Sett valgt rom som Mål">🏆 Mål</button>
                 </div>
 
                 <div class="toolbar-group">
-                    <button id="btn-clear">Tøm Alt</button>
-                    <button id="btn-download">Last ned</button>
+                    <button id="btn-solve" style="background-color: #d4edda; border-color: #28a745; color: #155724;">🔍 Sjekk & Løs</button>
+                    <button id="btn-clear">🗑️ Tøm</button>
+                    <button id="btn-download">💾 Bilde</button>
                 </div>
             </div>
         </div>
@@ -57,4 +58,4 @@
     <script src="script.js"></script>
 </body>
 </html>
-<!-- Version: #13 -->
+<!-- Version: #17 -->
