@@ -1,448 +1,279 @@
-/* Version: #5 */
+/* Version: #8 */
 
-// === KONFIGURASJON & DATA ===
+document.addEventListener('DOMContentLoaded', () => {
+    // === KONFIGURASJON ===
+    const canvas = document.getElementById('game-canvas');
+    const ctx = canvas.getContext('2d');
+    const statusElement = document.getElementById('status-display');
+    const btnReset = document.getElementById('btn-reset');
+    const btnGenerate = document.getElementById('btn-generate');
+    const btnDownload = document.getElementById('btn-download');
+    const debugLog = document.getElementById('debug-log');
 
-// Definisjon av nivåer. 
-// Grid: x (kolonne), y (rad). 0,0 er øverst til venstre.
-const levels = [
-    {
-        id: 1,
-        name: "Nivå 1: Introduksjon",
-        width: 4,
-        height: 5,
-        start: { x: 3, y: 4 }, 
-        goal: { x: 3, y: 0 },
-        cells: [
-            // Rad 0
-            [
-                { type: 'none', walls: ['left', 'top', 'bottom'] },
-                { type: 'red', walls: ['top'] },
-                { type: 'blue', walls: ['top'] },
-                { type: 'none', walls: ['top', 'right'] }
-            ],
-            // Rad 1
-            [
-                { type: 'blue', walls: ['left', 'top'] },
-                { type: 'red', walls: [] },
-                { type: 'blue', walls: ['right'] },
-                { type: 'red', walls: ['left', 'right'] }
-            ],
-            // Rad 2
-            [
-                { type: 'red', walls: ['left'] },
-                { type: 'blue', walls: ['bottom'] },
-                { type: 'red', walls: ['top', 'right'] },
-                { type: 'blue', walls: ['left', 'right'] }
-            ],
-            // Rad 3
-            [
-                { type: 'blue', walls: ['left'] },
-                { type: 'red', walls: ['top', 'bottom'] },
-                { type: 'blue', walls: ['bottom'] },
-                { type: 'red', walls: ['left', 'right', 'bottom'] }
-            ],
-            // Rad 4
-            [
-                { type: 'red', walls: ['left', 'bottom'] },
-                { type: 'blue', walls: ['top', 'bottom'] },
-                { type: 'red', walls: ['top', 'bottom'] },
-                { type: 'none', walls: ['bottom', 'right', 'top'] }
-            ]
-        ]
-    }
-];
+    // Farger
+    const COLOR_RED = '#e74c3c';
+    const COLOR_BLUE = '#3498db';
+    const COLOR_NODE = '#222';
+    const COLOR_PLAYER = '#27ae60';
+    const COLOR_HIGHLIGHT = 'rgba(241, 196, 15, 0.5)';
 
-// === TILSTANDSVARIABLER ===
-let currentLevelIndex = 0;
-let currentLevel = null;
-let playerPos = { x: 0, y: 0 };
-let currentColorContext = null; 
-
-// === DOM ELEMENTER ===
-const boardElement = document.getElementById('game-board');
-const statusElement = document.getElementById('status-display');
-const btnReset = document.getElementById('btn-reset');
-const btnGenerate = document.getElementById('btn-generate');
-const btnDownload = document.getElementById('btn-download');
-const debugLog = document.getElementById('debug-log');
-
-// === LOGGER ===
-function log(msg) {
-    const timestamp = new Date().toLocaleTimeString();
-    const logLine = `[${timestamp}] ${msg}`;
-    console.log(logLine);
-    debugLog.textContent = logLine + "\n" + debugLog.textContent;
-    if (debugLog.textContent.length > 2000) {
-        debugLog.textContent = debugLog.textContent.substring(0, 2000) + "...";
-    }
-}
-
-// === GENERATOR ===
-
-function generateLevel(width, height) {
-    log(`Genererer nytt nivå (${width}x${height})...`);
+    // === DATASTRUKTUR ===
+    // Et nivå består av noder (punkter) og edges (linjer mellom dem)
     
-    // 1. Initialiser Grid med vegger overalt
-    let cells = [];
-    for (let y = 0; y < height; y++) {
-        let row = [];
-        for (let x = 0; x < width; x++) {
-            row.push({
-                x: x, 
-                y: y,
-                type: 'none', // Fylles senere
-                walls: ['top', 'right', 'bottom', 'left'],
-                visited: false // For maze generation
-            });
+    const levels = [
+        {
+            id: 1,
+            name: "Nivå 1: Håndtegnet Kopi",
+            // Noder: ID og posisjon (x, y) på 600x700 canvas
+            nodes: [
+                { id: 0, x: 550, y: 650, label: "INN" },  // Start (Nede høyre)
+                { id: 1, x: 300, y: 650 },                // Bunn midt
+                { id: 2, x: 50, y: 650 },                 // Bunn venstre
+                { id: 3, x: 550, y: 450 },                // Høyre side 1 (opp fra start)
+                { id: 4, x: 300, y: 450 },                // Senter lav
+                { id: 5, x: 50, y: 400 },                 // Venstre side lav (diagonal)
+                { id: 6, x: 550, y: 250 },                // Høyre side 2
+                { id: 7, x: 400, y: 250 },                // Senter høy (Liten knekk)
+                { id: 8, x: 300, y: 250 },                // Senter høy venstre
+                { id: 9, x: 50, y: 150 },                 // Venstre side høy
+                { id: 10, x: 550, y: 50, label: "UT" },   // Mål (Oppe høyre)
+                { id: 11, x: 400, y: 50 },                // Topp
+                { id: 12, x: 50, y: 50 }                  // Topp venstre
+            ],
+            // Edges: Forbindelser mellom noder. color: 'red' eller 'blue'
+            edges: [
+                // Fra Start (0)
+                { from: 0, to: 1, color: 'blue' },   // Bunn mot venstre
+                { from: 0, to: 3, color: 'red' },    // Opp langs høyre kant
+                
+                // Bunnrekka
+                { from: 1, to: 2, color: 'blue' },
+                { from: 1, to: 4, color: 'red' },    // Opp i midten
+                
+                // Venstre side (Diagonaler i tegningen)
+                { from: 2, to: 5, color: 'blue' },   // Diagonal opp
+                { from: 5, to: 4, color: 'blue' },   // Inn mot senter
+                { from: 5, to: 9, color: 'blue' },   // Videre opp venstre
+                
+                // Senter området
+                { from: 3, to: 4, color: 'blue' },   // Tverrforbindelse
+                { from: 3, to: 6, color: 'red' },    // Videre opp høyre kant
+                { from: 4, to: 5, color: 'blue' },   // (Allerede definert over, men sjekk retning - graf er uretet)
+                
+                // Komplisert midtparti
+                { from: 4, to: 8, color: 'blue' },   // Senter lav til høy (blå?) - Gjetning basert på tegning
+                { from: 6, to: 7, color: 'blue' },   // Inn fra høyre
+                { from: 7, to: 8, color: 'red' },    // Liten knekk
+                { from: 8, to: 9, color: 'red' },    // Ut mot venstre
+                
+                // Toppen
+                { from: 6, to: 10, color: 'red' },   // Opp til mål
+                { from: 9, to: 12, color: 'blue' },  // Opp venstre hjørne
+                { from: 12, to: 11, color: 'black' }, // Taket? (Sort i tegning, men la oss si start/slutt ikke teller) -> Setter sort som vegg/ubrukbar eller nøytral. La oss bruke RØD for å gjøre den kjip.
+                { from: 11, to: 10, color: 'blue' }, // Siste strekk mot mål
+                { from: 7, to: 11, color: 'blue' }   // Opp i midten
+            ],
+            startNode: 0,
+            goalNode: 10
         }
-        cells.push(row);
+    ];
+
+    // === TILSTAND ===
+    let currentLevel = null;
+    let currentPlayerNode = 0;
+    let lastMoveColor = null; // 'red', 'blue' eller null (start)
+
+    // === LOGGING ===
+    function log(msg) {
+        const timestamp = new Date().toLocaleTimeString();
+        console.log(`[${timestamp}] ${msg}`);
+        debugLog.textContent = `[${timestamp}] ${msg}\n` + debugLog.textContent;
     }
 
-    // 2. Maze Generation (Recursive Backtracking)
-    let stack = [];
-    let current = cells[0][0];
-    current.visited = true;
-    stack.push(current);
+    // === MOTOR ===
 
-    while (stack.length > 0) {
-        current = stack.pop();
+    function initGame() {
+        log("Starter Linje-Labyrinten...");
+        loadLevel(0);
+
+        // Event Listeners
+        canvas.addEventListener('mousedown', handleCanvasClick);
+        // Støtte for touch
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Hindre scroll
+            handleCanvasClick(e.touches[0]);
+        }, {passive: false});
+
+        btnReset.addEventListener('click', () => {
+            log("Reset level");
+            loadLevel(0);
+        });
+
+        btnDownload.addEventListener('click', downloadImage);
+    }
+
+    function loadLevel(index) {
+        currentLevel = levels[index];
+        currentPlayerNode = currentLevel.startNode;
+        lastMoveColor = null;
         
-        let neighbors = [];
-        const directions = [
-            { dx: 0, dy: -1, wall: 'top', opp: 'bottom' },
-            { dx: 1, dy: 0, wall: 'right', opp: 'left' },
-            { dx: 0, dy: 1, wall: 'bottom', opp: 'top' },
-            { dx: -1, dy: 0, wall: 'left', opp: 'right' }
-        ];
+        statusElement.textContent = `Velkommen til ${currentLevel.name}`;
+        statusElement.style.color = "#555";
+        
+        draw();
+        log(`Lastet nivå: ${currentLevel.name}`);
+    }
 
-        directions.forEach(dir => {
-            const nx = current.x + dir.dx;
-            const ny = current.y + dir.dy;
-            if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                if (!cells[ny][nx].visited) {
-                    neighbors.push({ cell: cells[ny][nx], dir: dir });
-                }
+    function getMousePos(evt) {
+        const rect = canvas.getBoundingClientRect();
+        // Håndter både mus og touch events korrekt
+        const clientX = evt.clientX;
+        const clientY = evt.clientY;
+        
+        // Beregn skalering (hvis canvas vises mindre via CSS enn sin faktiske bredde)
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+
+        return {
+            x: (clientX - rect.left) * scaleX,
+            y: (clientY - rect.top) * scaleY
+        };
+    }
+
+    function handleCanvasClick(e) {
+        const pos = getMousePos(e);
+        
+        // Sjekk om vi klikket på en node (nabo)
+        // Vi går gjennom naboer til nåværende posisjon
+        const neighbors = getNeighbors(currentPlayerNode);
+        
+        let clickedNode = -1;
+
+        // Sjekk om klikk er nær en nabo-node
+        neighbors.forEach(n => {
+            const node = currentLevel.nodes[n.nodeId];
+            const dist = Math.sqrt(Math.pow(pos.x - node.x, 2) + Math.pow(pos.y - node.y, 2));
+            if (dist < 40) { // Toleranse på 40px radius
+                clickedNode = n.nodeId;
             }
         });
 
-        if (neighbors.length > 0) {
-            stack.push(current);
-            const chosen = neighbors[Math.floor(Math.random() * neighbors.length)];
-            const next = chosen.cell;
-            const dir = chosen.dir;
-
-            current.walls = current.walls.filter(w => w !== dir.wall);
-            next.walls = next.walls.filter(w => w !== dir.opp);
-
-            next.visited = true;
-            stack.push(next);
-        }
-    }
-
-    // 3. Fjern noen ekstra vegger for å lage løkker
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const cell = cells[y][x];
-            if (cell.walls.length > 0 && Math.random() < 0.1) {
-                const wallToRemove = cell.walls[Math.floor(Math.random() * cell.walls.length)];
-                let nx = x, ny = y, oppWall = '';
-                if (wallToRemove === 'top') { ny--; oppWall = 'bottom'; }
-                if (wallToRemove === 'bottom') { ny++; oppWall = 'top'; }
-                if (wallToRemove === 'left') { nx--; oppWall = 'right'; }
-                if (wallToRemove === 'right') { nx++; oppWall = 'left'; }
-
-                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                    cell.walls = cell.walls.filter(w => w !== wallToRemove);
-                    cells[ny][nx].walls = cells[ny][nx].walls.filter(w => w !== oppWall);
-                }
-            }
-        }
-    }
-
-    // 4. Definer Start og Mål
-    const startPos = { x: 0, y: height - 1 };
-    const goalPos = { x: width - 1, y: 0 };
-
-    // 5. Finn korteste vei (BFS)
-    let queue = [{ x: startPos.x, y: startPos.y, path: [] }];
-    let visitedBFS = new Set();
-    let solutionPath = null;
-
-    visitedBFS.add(`${startPos.x},${startPos.y}`);
-
-    while (queue.length > 0) {
-        let curr = queue.shift();
-        
-        if (curr.x === goalPos.x && curr.y === goalPos.y) {
-            solutionPath = curr.path;
-            break;
-        }
-
-        const cell = cells[curr.y][curr.x];
-        const directions = [
-            { dx: 0, dy: -1, wall: 'top' },
-            { dx: 1, dy: 0, wall: 'right' },
-            { dx: 0, dy: 1, wall: 'bottom' },
-            { dx: -1, dy: 0, wall: 'left' }
-        ];
-
-        directions.forEach(dir => {
-            if (!cell.walls.includes(dir.wall)) {
-                const nx = curr.x + dir.dx;
-                const ny = curr.y + dir.dy;
-                if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-                    if (!visitedBFS.has(`${nx},${ny}`)) {
-                        visitedBFS.add(`${nx},${ny}`);
-                        let newPath = [...curr.path, { x: nx, y: ny }];
-                        queue.push({ x: nx, y: ny, path: newPath });
-                    }
-                }
-            }
-        });
-    }
-
-    if (!solutionPath) {
-        log("Retry: Ingen løsning funnet.");
-        return generateLevel(width, height);
-    }
-
-    // 6. Fargelegg stien
-    let colorToggle = true; 
-    if (Math.random() > 0.5) colorToggle = false;
-
-    solutionPath.forEach((pos) => {
-        if (pos.x === goalPos.x && pos.y === goalPos.y) return;
-        cells[pos.y][pos.x].type = colorToggle ? 'red' : 'blue';
-        cells[pos.y][pos.x].isOnPath = true;
-        colorToggle = !colorToggle;
-    });
-
-    // 7. Fyll resten
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            if ((x === startPos.x && y === startPos.y) || (x === goalPos.x && y === goalPos.y)) continue;
-            if (cells[y][x].isOnPath) continue;
-            cells[y][x].type = Math.random() > 0.5 ? 'red' : 'blue';
-        }
-    }
-
-    const cleanCells = cells.map(row => row.map(c => ({
-        type: c.type,
-        walls: c.walls
-    })));
-
-    return {
-        id: Date.now(),
-        name: `Generert Nivå (${width}x${height})`,
-        width: width,
-        height: height,
-        start: startPos,
-        goal: goalPos,
-        cells: cleanCells
-    };
-}
-
-
-// === SPILLMOTOR ===
-
-function initGame() {
-    log("Initialiserer spill...");
-    
-    btnGenerate.disabled = false;
-    btnGenerate.textContent = "Generer Nytt Nivå";
-    
-    loadLevel(0);
-
-    // Event Listeners
-    btnReset.addEventListener('click', () => {
-        log("Knapp: Nullstill Nivå");
-        setupLevelData(currentLevel);
-    });
-
-    btnGenerate.addEventListener('click', () => {
-        log("Knapp: Generer Nytt Nivå");
-        const newLevel = generateLevel(5, 6); 
-        currentLevelIndex = -1;
-        levels.push(newLevel);
-        setupLevelData(newLevel);
-    });
-
-    btnDownload.addEventListener('click', () => {
-        log("Forbereder nedlasting av bilde...");
-        
-        // 1. Skjul spilleren midlertidig
-        const player = document.querySelector('.player');
-        if (player) player.style.display = 'none';
-
-        // 2. Fjern grønne "valid move" markeringer
-        const highlights = document.querySelectorAll('.valid-move');
-        highlights.forEach(el => el.classList.remove('valid-move'));
-
-        // 3. Ta bilde av #board-container
-        html2canvas(document.querySelector("#board-container")).then(canvas => {
-            // Last ned
-            const link = document.createElement('a');
-            link.download = `fargelabyrint_${Date.now()}.png`;
-            link.href = canvas.toDataURL();
-            link.click();
-            
-            // 4. Gjenopprett visning
-            if (player) player.style.display = 'block';
-            renderBoard(); // Tegn på nytt for å få tilbake highlights
-            log("Bilde lastet ned.");
-        });
-    });
-
-    document.addEventListener('keydown', (e) => {
-        let dx = 0;
-        let dy = 0;
-        if (e.key === 'ArrowUp') dy = -1;
-        if (e.key === 'ArrowDown') dy = 1;
-        if (e.key === 'ArrowLeft') dx = -1;
-        if (e.key === 'ArrowRight') dx = 1;
-
-        if (dx !== 0 || dy !== 0) {
-            e.preventDefault(); 
-            tryMove(dx, dy);
-        }
-    });
-
-    log("Spill klart. Start ved START.");
-}
-
-function setupLevelData(levelData) {
-    currentLevel = levelData;
-    playerPos = { ...currentLevel.start };
-    currentColorContext = null; 
-
-    log(`Laster ${currentLevel.name}. Startposisjon: ${playerPos.x}, ${playerPos.y}`);
-    statusElement.textContent = "Bruk piltaster eller klikk for å flytte.";
-    statusElement.style.color = "#555"; 
-
-    renderBoard();
-}
-
-function loadLevel(index) {
-    if (index >= levels.length) return;
-    currentLevelIndex = index;
-    setupLevelData(levels[index]);
-}
-
-function renderBoard() {
-    boardElement.innerHTML = ''; 
-    boardElement.style.gridTemplateColumns = `repeat(${currentLevel.width}, var(--cell-size))`;
-
-    for (let y = 0; y < currentLevel.height; y++) {
-        for (let x = 0; x < currentLevel.width; x++) {
-            const cellData = currentLevel.cells[y][x];
-            const cellDiv = document.createElement('div');
-            cellDiv.classList.add('cell');
-            
-            if (cellData.walls) {
-                cellData.walls.forEach(wall => cellDiv.classList.add(`wall-${wall}`));
-            }
-
-            if (x === currentLevel.start.x && y === currentLevel.start.y) {
-                cellDiv.classList.add('cell-start');
-            }
-            if (x === currentLevel.goal.x && y === currentLevel.goal.y) {
-                cellDiv.classList.add('cell-goal');
-            }
-
-            if (cellData.type === 'red' || cellData.type === 'blue') {
-                const dot = document.createElement('div');
-                dot.classList.add('dot', cellData.type);
-                cellDiv.appendChild(dot);
-            }
-
-            if (x === playerPos.x && y === playerPos.y) {
-                const player = document.createElement('div');
-                player.classList.add('player');
-                cellDiv.appendChild(player);
-            }
-
-            cellDiv.addEventListener('click', () => {
-                const dx = x - playerPos.x;
-                const dy = y - playerPos.y;
-                if (Math.abs(dx) + Math.abs(dy) === 1) {
-                    tryMove(dx, dy);
-                }
-            });
-            
-            if (isValidMove(x, y)) {
-                cellDiv.classList.add('valid-move');
-            }
-
-            boardElement.appendChild(cellDiv);
-        }
-    }
-}
-
-function isValidMove(targetX, targetY) {
-    if (targetX < 0 || targetX >= currentLevel.width || targetY < 0 || targetY >= currentLevel.height) {
-        return false;
-    }
-
-    const currentCell = currentLevel.cells[playerPos.y][playerPos.x];
-    const targetCell = currentLevel.cells[targetY][targetX];
-
-    const dx = targetX - playerPos.x;
-    const dy = targetY - playerPos.y;
-    
-    let direction = '';
-    let oppositeDirection = '';
-
-    if (dy === -1) { direction = 'top'; oppositeDirection = 'bottom'; }
-    if (dy === 1)  { direction = 'bottom'; oppositeDirection = 'top'; }
-    if (dx === -1) { direction = 'left'; oppositeDirection = 'right'; }
-    if (dx === 1)  { direction = 'right'; oppositeDirection = 'left'; }
-
-    if (currentCell.walls && currentCell.walls.includes(direction)) return false;
-    if (targetCell.walls && targetCell.walls.includes(oppositeDirection)) return false;
-
-    const fromColor = currentColorContext;
-    const toColor = targetCell.type;
-
-    if (toColor === 'none') return true;
-    if (fromColor === null || fromColor === 'none') return true;
-
-    if (fromColor === 'red' && toColor === 'blue') return true;
-    if (fromColor === 'blue' && toColor === 'red') return true;
-
-    return false;
-}
-
-function tryMove(dx, dy) {
-    const newX = playerPos.x + dx;
-    const newY = playerPos.y + dy;
-
-    if (isValidMove(newX, newY)) {
-        playerPos.x = newX;
-        playerPos.y = newY;
-        
-        const cell = currentLevel.cells[newY][newX];
-        currentColorContext = cell.type === 'none' ? null : cell.type;
-
-        log(`Flyttet til (${newX},${newY}). Ny farge: ${currentColorContext || "Ingen"}`);
-        
-        if (newX === currentLevel.goal.x && newY === currentLevel.goal.y) {
-            statusElement.textContent = "GRATULERER! DU KOM I MÅL!";
-            statusElement.style.color = "green";
-            log("SEIER! Mål nådd.");
+        if (clickedNode !== -1) {
+            tryMove(clickedNode);
         } else {
-            statusElement.textContent = "Gjør ditt neste trekk...";
-            statusElement.style.color = "#555";
+            // Sjekk om vi klikket på spilleren selv (valgfritt: vis info)
+        }
+    }
+
+    function getNeighbors(nodeId) {
+        // Finn alle edges koblet til denne noden
+        const neighbors = [];
+        currentLevel.edges.forEach(edge => {
+            if (edge.from === nodeId) {
+                neighbors.push({ nodeId: edge.to, color: edge.color });
+            }
+            if (edge.to === nodeId) {
+                neighbors.push({ nodeId: edge.from, color: edge.color });
+            }
+        });
+        return neighbors;
+    }
+
+    function tryMove(targetNodeId) {
+        // 1. Finn edge mellom current og target
+        const edge = currentLevel.edges.find(e => 
+            (e.from === currentPlayerNode && e.to === targetNodeId) || 
+            (e.from === targetNodeId && e.to === currentPlayerNode)
+        );
+
+        if (!edge) {
+            log("Ingen direkte linje her.");
+            return;
         }
 
-        renderBoard(); 
-    } else {
-        log("Ugyldig trekk!");
-        statusElement.textContent = "Ugyldig trekk! Rød -> Blå -> Rød...";
-        statusElement.style.color = "red";
-        boardElement.classList.add('shake');
-        setTimeout(() => boardElement.classList.remove('shake'), 300);
-    }
-}
+        // 2. Sjekk fargeregel
+        // Regel: Ny farge MÅ være ulik forrige.
+        // Unntak: Hvis lastMoveColor er null (starten), er alt lov.
+        
+        if (lastMoveColor !== null && edge.color === lastMoveColor) {
+            log(`Ugyldig trekk! Du kom fra ${lastMoveColor}, må velge motsatt.`);
+            statusElement.textContent = `Feil! Du kom fra ${translateColor(lastMoveColor)}, du må velge en annen farge.`;
+            statusElement.style.color = "red";
+            
+            // Rist på canvas
+            canvas.style.transform = "translateX(5px)";
+            setTimeout(() => canvas.style.transform = "translateX(0)", 100);
+            return;
+        }
 
-initGame();
-/* Version: #5 */
+        // 3. Utfør flytt
+        currentPlayerNode = targetNodeId;
+        lastMoveColor = edge.color;
+        
+        log(`Flyttet til Node ${targetNodeId} via ${edge.color}.`);
+        statusElement.textContent = `Bra! Neste trekk må være ${edge.color === 'red' ? 'BLÅ' : 'RØD'}.`;
+        statusElement.style.color = "#555";
+
+        // 4. Sjekk seier
+        if (currentPlayerNode === currentLevel.goalNode) {
+            statusElement.textContent = "GRATULERER! DU KOM UT!";
+            statusElement.style.color = "green";
+            log("Mål nådd!");
+        }
+
+        draw();
+    }
+
+    function translateColor(c) {
+        if (c === 'red') return 'RØD';
+        if (c === 'blue') return 'BLÅ';
+        return c;
+    }
+
+    // === TEGNING ===
+
+    function draw() {
+        // Tøm canvas
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Tegn linjer (edges)
+        currentLevel.edges.forEach(edge => {
+            const start = currentLevel.nodes[edge.from];
+            const end = currentLevel.nodes[edge.to];
+            
+            ctx.beginPath();
+            ctx.moveTo(start.x, start.y);
+            ctx.lineTo(end.x, end.y);
+            ctx.lineWidth = 8;
+            ctx.strokeStyle = (edge.color === 'red') ? COLOR_RED : 
+                              (edge.color === 'blue') ? COLOR_BLUE : '#333';
+            ctx.stroke();
+        });
+
+        // Tegn noder
+        currentLevel.nodes.forEach(node => {
+            // Tegn selve prikken
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, 10, 0, 2 * Math.PI);
+            ctx.fillStyle = COLOR_NODE;
+            ctx.fill();
+
+            // Tegn tekst label hvis den finnes
+            if (node.label) {
+                ctx.font = "bold 16px Arial";
+                ctx.fillStyle = "#000";
+                // Juster tekstposisjon litt
+                const xOffset = node.x > 300 ? 20 : -50;
+                ctx.fillText(node.label, node.x + xOffset, node.y + 5);
+            }
+        });
+
+        // Highlight gyldige trekk (Hint)
+        const neighbors = getNeighbors(currentPlayerNode);
+        neighbors.forEach(n => {
+            // Sjekk om trekket er gyldig før vi highlighter
+            const isValid = (lastMoveColor === null || n.color !== lastMoveColor);
+            
+            if (isValid) {
+                const node = currentLevel
