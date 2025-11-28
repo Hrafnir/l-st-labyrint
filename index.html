@@ -1,0 +1,36 @@
+<!-- Version: #1 -->
+<!DOCTYPE html>
+<html lang="no">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farge-Labyrinten</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="game-container">
+        <header>
+            <h1>Farge-Labyrinten</h1>
+            <p>Start ved start, gå til mål. Regel: Rød -> Blå -> Rød -> Blå.</p>
+        </header>
+
+        <div id="status-display">Velkommen! Laster spillet...</div>
+
+        <!-- Selve spillbrettet genereres her av script.js -->
+        <div id="board-container">
+            <div id="game-board"></div>
+        </div>
+
+        <div id="controls">
+            <button id="btn-reset">Nullstill Nivå</button>
+            <button id="btn-generate" disabled>Generer Nytt Nivå (Kommer)</button>
+        </div>
+        
+        <div id="debug-log" style="display:none;"></div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+<!-- Version: #1 -->
