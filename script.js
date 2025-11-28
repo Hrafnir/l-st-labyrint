@@ -1,4 +1,4 @@
-/* Version: #16 */
+/* Version: #19 */
 
 document.addEventListener('DOMContentLoaded', () => {
     const canvas = document.getElementById('game-canvas');
@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnToolSelect = document.getElementById('btn-tool-select');
     const btnSetStart = document.getElementById('btn-set-start');
     const btnSetGoal = document.getElementById('btn-set-goal');
+    const btnSolve = document.getElementById('btn-solve');
     const btnClear = document.getElementById('btn-clear');
     const btnDownload = document.getElementById('btn-download');
 
@@ -29,30 +30,33 @@ document.addEventListener('DOMContentLoaded', () => {
         outside: '#f9f9f9',
         inside: '#eef',
         highlight: 'rgba(52, 152, 219, 0.2)',
-        selected: 'rgba(241, 196, 15, 0.4)'
+        selected: 'rgba(241, 196, 15, 0.4)',
+        solutionPath: 'rgba(46, 204, 113, 0.6)'
     };
     const POINT_RADIUS = 6;
     const CLICK_TOLERANCE = 12;
 
     // Data Model
-    let points = []; // {id, x, y}
-    let walls = [];  // {id, p1 (id), p2 (id), color}
-    let rooms = [];  // {id, pointIds: [], isOutside, centroid: {x,y}, isStart, isGoal}
+    let points = []; 
+    let walls = [];  
+    let rooms = [];  
     
     // State
-    let mode = 'play'; // 'play', 'edit'
-    let tool = 'select'; // 'point', 'wall', 'select'
+    let mode = 'play'; 
+    let tool = 'select'; 
     
     // Interaction State
     let draggingPoint = null;
-    let wallStartPoint = null; // Første punkt i en vegg-konstruksjon
+    let wallStartPoint = null; 
     let selectedRoomId = null;
     let hoverWall = null;
-    let mousePos = {x:0, y:0}; // For å tegne hjelpelinje
+    let mousePos = {x:0, y:0};
     
     // Game State
     let currentRoomId = null;
     let lastWallColor = null;
+    let solutionPath = []; // Array of wall IDs to highlight
+    let showSolution = false;
 
     // === INITIALIZATION ===
     function init() {
@@ -67,7 +71,6 @@ document.addEventListener('DOMContentLoaded', () => {
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseup', handleMouseUp);
     
-    // Buttons
     btnModePlay.addEventListener('click', () => setMode('play'));
     btnModeEdit.addEventListener('click', () => setMode('edit'));
     
@@ -77,6 +80,8 @@ document.addEventListener('DOMContentLoaded', () => {
     
     btnSetStart.addEventListener('click', () => setRoomType('start'));
     btnSetGoal.addEventListener('click', () => setRoomType('goal'));
+
+    btnSolve.addEventListener('click', solveLevel);
     
     btnClear.addEventListener('click', () => {
         if(confirm("Slett alt?")) {
@@ -84,6 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
             walls = [];
             rooms = [];
             currentRoomId = null;
+            solutionPath = [];
             recalculateRooms();
             draw();
         }
@@ -94,9 +100,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // === MODES & TOOLS ===
     function setMode(newMode) {
         mode = newMode;
-        // Reset interaction states
         wallStartPoint = null;
         draggingPoint = null;
+        showSolution = false;
 
         if (mode === 'play') {
             btnModePlay.classList.add('active');
@@ -105,18 +111,14 @@ document.addEventListener('DOMContentLoaded', () => {
             statusText.textContent = "Spillmodus: Klikk på en vegg for å gå.";
             selectedRoomId = null;
             
-            // Initialiser spill
-            const startRoom = rooms.find(r => r.isStart);
-            if (startRoom) currentRoomId = startRoom.id;
-            else if (rooms.length > 0) currentRoomId = rooms.find(r => r.isOutside)?.id || rooms[0].id;
-            lastWallColor = null;
+            // Init Game
+            resetGame();
 
         } else {
             btnModeEdit.classList.add('active');
             btnModePlay.classList.remove('active');
             editTools.style.display = 'flex';
             statusText.textContent = "Redigering: Velg verktøy.";
-            // Default til vegg-verktøy da det er mest brukt
             setTool('wall');
         }
         draw();
@@ -124,28 +126,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function setTool(newTool) {
         tool = newTool;
-        // Reset states når vi bytter verktøy
         wallStartPoint = null;
         draggingPoint = null;
         
         document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
         if (tool === 'point') {
             btnToolPoint.classList.add('active');
-            statusText.textContent = "Punkt-modus: Klikk for å lage nye punkter.";
+            statusText.textContent = "Punkt: Klikk for å sette punkter.";
         }
         if (tool === 'wall') {
             btnToolWall.classList.add('active');
-            statusText.textContent = "Vegg-modus: Klikk på punkt A, flytt musen, klikk på punkt B.";
+            statusText.textContent = "Vegg: Klikk A, så Klikk B. (Slippes etterpå)";
         }
         if (tool === 'select') {
             btnToolSelect.classList.add('active');
-            statusText.textContent = "Velg-modus: Flytt punkter, endre veggfarge, velg rom.";
+            statusText.textContent = "Velg: Endre vegg (klikk), flytt punkt (dra), velg rom.";
         }
         draw();
     }
 
+    function resetGame() {
+        const startRoom = rooms.find(r => r.isStart);
+        if (startRoom) currentRoomId = startRoom.id;
+        else if (rooms.length > 0) currentRoomId = rooms.find(r => r.isOutside)?.id || rooms[0].id;
+        lastWallColor = null;
+        solutionPath = [];
+    }
+
     // === CORE LOGIC: ROOM FINDER ===
     function recalculateRooms() {
+        // Ta vare på start/mål
         const oldStart = rooms.find(r => r.isStart);
         const oldGoal = rooms.find(r => r.isGoal);
         const oldStartCenter = oldStart ? oldStart.centroid : null;
@@ -155,6 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // 1. Bygg adjacency list
         const adj = {};
+        // Initialiser for ALLE punkter (viktig bugfix)
         points.forEach(p => adj[p.id] = []);
 
         walls.forEach(w => {
@@ -186,6 +197,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const startNode = parseInt(pStr);
             const neighbors = adj[startNode];
             
+            if (!neighbors) continue; // Skip if no neighbors
+
             for (let i = 0; i < neighbors.length; i++) {
                 const edgeKey = `${startNode}-${neighbors[i].neighborId}`;
                 
@@ -194,16 +207,24 @@ document.addEventListener('DOMContentLoaded', () => {
                     let curr = startNode;
                     let nextInfo = neighbors[i];
                     
-                    while (!visitedEdges.has(`${curr}-${nextInfo.neighborId}`)) {
+                    // Safety break
+                    let iterations = 0;
+                    const maxIterations = points.length * 2;
+
+                    while (!visitedEdges.has(`${curr}-${nextInfo.neighborId}`) && iterations < maxIterations) {
                         visitedEdges.add(`${curr}-${nextInfo.neighborId}`);
                         path.push(curr);
                         
                         const prevNode = curr;
                         curr = nextInfo.neighborId;
+                        iterations++;
                         
                         const currNeighbors = adj[curr];
+                        if (!currNeighbors || currNeighbors.length === 0) break; // Dead end check
+
                         const backIndex = currNeighbors.findIndex(n => n.neighborId === prevNode);
-                        
+                        if (backIndex === -1) break;
+
                         // Next Edge CCW
                         let nextIndex = (backIndex - 1 + currNeighbors.length) % currNeighbors.length;
                         nextInfo = currNeighbors[nextIndex];
@@ -228,7 +249,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // 3. Identifiser Utsiden (størst areal)
+        // 3. Identifiser Utsiden
         if (rooms.length > 0) {
             rooms.sort((a, b) => Math.abs(b.area) - Math.abs(a.area));
             rooms[0].isOutside = true; 
@@ -245,7 +266,270 @@ document.addEventListener('DOMContentLoaded', () => {
             if (r) r.isGoal = true;
         }
 
-        roomCountText.textContent = `${rooms.length} Rom (1 Utside + ${Math.max(0, rooms.length-1)} Inne)`;
+        roomCountText.textContent = `${rooms.length} Rom`;
+    }
+
+    // === SOLVER ALGORITHM ===
+    function solveLevel() {
+        // Finn start og mål
+        const startRoom = rooms.find(r => r.isStart);
+        const goalRoom = rooms.find(r => r.isGoal);
+
+        if (!startRoom || !goalRoom) {
+            alert("Du må sette både START og MÅL først!");
+            return;
+        }
+
+        statusText.textContent = "Analyserer...";
+        
+        // BFS State: { roomId, lastColor, path: [wallId, wallId...] }
+        // Vi må inkludere lastColor i visited-state fordi det påvirker hvor vi kan gå.
+        
+        let queue = [{
+            rId: startRoom.id,
+            color: null, // Ingen farge ved start
+            path: []
+        }];
+
+        let visited = new Set(); // Format: "roomId-color"
+        visited.add(`${startRoom.id}-null`);
+
+        let foundPath = null;
+
+        while (queue.length > 0) {
+            let curr = queue.shift();
+
+            if (curr.rId === goalRoom.id) {
+                foundPath = curr.path;
+                break;
+            }
+
+            // Finn naboer (vegger i dette rommet)
+            // Vi må finne alle vegger som grenser til curr.rId
+            // En vegg grenser hvis den deler to rom, og ett av dem er curr.rId
+            
+            // Dette er litt ineffektivt (looper alle vegger), men ok for små brett.
+            // Optimalisering: Pre-kalkuler naboer i recalculateRooms.
+            
+            const adjacentWalls = walls.filter(w => {
+                // Sjekk om veggen tilhører rommet.
+                // Vi bruker samme logikk som i handlePlayClick
+                const r1 = getRoomByPoints(w.p1, w.p2, curr.rId); // Sjekk om currRoom har disse punktene
+                // Dette er vanskeligere fordi en vegg er delt av to rom.
+                // La oss finne de to rommene veggen deler.
+                const sharedRooms = getRoomsSharingWall(w);
+                return sharedRooms.some(r => r.id === curr.rId);
+            });
+
+            for (let w of adjacentWalls) {
+                // Sjekk regler
+                if (w.color === 'black') continue;
+                if (curr.color !== null && w.color === curr.color) continue;
+
+                // Finn det ANDRE rommet
+                const sharedRooms = getRoomsSharingWall(w);
+                const nextRoom = sharedRooms.find(r => r.id !== curr.rId);
+
+                if (nextRoom) {
+                    const stateKey = `${nextRoom.id}-${w.color}`;
+                    if (!visited.has(stateKey)) {
+                        visited.add(stateKey);
+                        queue.push({
+                            rId: nextRoom.id,
+                            color: w.color,
+                            path: [...curr.path, w.id]
+                        });
+                    }
+                }
+            }
+        }
+
+        if (foundPath) {
+            solutionPath = foundPath;
+            showSolution = true;
+            statusText.textContent = `Løsning funnet! (${foundPath.length} steg)`;
+            statusText.style.color = "green";
+            draw();
+        } else {
+            solutionPath = [];
+            showSolution = false;
+            statusText.textContent = "Ingen løsning funnet.";
+            statusText.style.color = "red";
+            alert("Ingen løsning funnet! Sjekk at vegger har riktig farge og at det er en åpning.");
+            draw();
+        }
+    }
+
+    function getRoomsSharingWall(wall) {
+        return rooms.filter(r => {
+            // Et rom deler en vegg hvis rommet inneholder begge punktene til veggen
+            // (Foreklet logikk som fungerer for polygoner definert av punkter)
+            return r.pointIds.includes(wall.p1) && r.pointIds.includes(wall.p2);
+        });
+    }
+
+    function getRoomByPoints(p1, p2, targetId) {
+        // Hjelper ikke så mye, vi bruker getRoomsSharingWall
+        return null;
+    }
+
+    // === INPUT HANDLING ===
+    function handleMouseDown(e) {
+        const pos = getMousePos(e);
+
+        if (mode === 'play') {
+            handlePlayClick(pos);
+            return;
+        }
+
+        // --- EDIT MODE ---
+        if (tool === 'point') {
+            addPoint(pos.x, pos.y);
+        }
+        else if (tool === 'wall') {
+            const p = getClosestPoint(pos.x, pos.y);
+            if (p && p.dist < CLICK_TOLERANCE) {
+                if (!wallStartPoint) {
+                    wallStartPoint = p.point;
+                    statusText.textContent = "Startpunkt valgt. Klikk neste.";
+                } else {
+                    if (wallStartPoint !== p.point) {
+                        addWall(wallStartPoint.id, p.point.id);
+                        statusText.textContent = "Vegg laget.";
+                        wallStartPoint = null; // SLIPP punktet
+                    } else {
+                        wallStartPoint = null; // Avbryt
+                    }
+                }
+            } else {
+                wallStartPoint = null;
+            }
+        }
+        else if (tool === 'select') {
+            const p = getClosestPoint(pos.x, pos.y);
+            if (p && p.dist < CLICK_TOLERANCE) {
+                draggingPoint = p.point;
+                return;
+            }
+            const w = getClosestWall(pos.x, pos.y);
+            if (w && w.dist < CLICK_TOLERANCE) {
+                cycleWallColor(w.wall);
+                return;
+            }
+            const r = getRoomAt(pos.x, pos.y);
+            if (r) {
+                selectedRoomId = r.id;
+                draw();
+            }
+        }
+        draw();
+    }
+
+    function handleMouseMove(e) {
+        mousePos = getMousePos(e);
+        
+        if (mode === 'edit') {
+            if (draggingPoint) {
+                draggingPoint.x = mousePos.x;
+                draggingPoint.y = mousePos.y;
+                draw(); 
+            }
+            else if (tool === 'select') {
+                const w = getClosestWall(mousePos.x, mousePos.y);
+                hoverWall = (w && w.dist < CLICK_TOLERANCE) ? w.wall : null;
+                draw();
+            }
+        }
+    }
+
+    function handleMouseUp(e) {
+        if (mode === 'edit' && draggingPoint) {
+            draggingPoint = null;
+            recalculateRooms();
+            draw();
+        }
+    }
+
+    function handlePlayClick(pos) {
+        const wObj = getClosestWall(pos.x, pos.y);
+        if (!wObj || wObj.dist > CLICK_TOLERANCE) return;
+        
+        const wall = wObj.wall;
+        const sharedRooms = getRoomsSharingWall(wall);
+
+        if (!sharedRooms.some(r => r.id === currentRoomId)) {
+            statusText.textContent = "Du må klikke på en vegg i rommet du står i.";
+            shakeCanvas();
+            return;
+        }
+
+        if (wall.color === 'black') {
+            statusText.textContent = "Svart vegg er stengt.";
+            return;
+        }
+        if (lastWallColor !== null && wall.color === lastWallColor) {
+            statusText.textContent = `Feil! Du må bytte farge (fra ${translateColor(lastWallColor)}).`;
+            shakeCanvas();
+            return;
+        }
+
+        const nextRoom = sharedRooms.find(r => r.id !== currentRoomId);
+        
+        if (nextRoom) {
+            currentRoomId = nextRoom.id;
+            lastWallColor = wall.color;
+            
+            if (nextRoom.isGoal) {
+                statusText.textContent = "MÅL NÅDD!";
+                statusText.style.color = "green";
+            } else {
+                const req = (wall.color === 'red') ? 'BLÅ' : 'RØD';
+                statusText.textContent = `Bra. Neste vegg må være ${req}.`;
+                statusText.style.color = "#333";
+            }
+            draw();
+        }
+    }
+
+    // === ACTIONS ===
+    function addPoint(x, y) {
+        points.push({ id: Date.now(), x, y });
+        draw();
+    }
+
+    function addWall(p1Id, p2Id) {
+        const exists = walls.find(w => (w.p1 === p1Id && w.p2 === p2Id) || (w.p1 === p2Id && w.p2 === p1Id));
+        if (!exists) {
+            // Default farge rød
+            walls.push({ id: Date.now(), p1: p1Id, p2: p2Id, color: 'red' });
+            recalculateRooms();
+            draw();
+        }
+    }
+
+    function cycleWallColor(wall) {
+        if (wall.color === 'red') wall.color = 'blue';
+        else if (wall.color === 'blue') wall.color = 'black';
+        else if (wall.color === 'black') {
+            // Slett
+            walls = walls.filter(w => w.id !== wall.id);
+            recalculateRooms();
+        }
+        draw();
+    }
+
+    function setRoomType(type) {
+        if (!selectedRoomId) return;
+        const r = rooms.find(r => r.id === selectedRoomId);
+        if (!r) return;
+
+        if (type === 'start') rooms.forEach(r => r.isStart = false);
+        if (type === 'goal') rooms.forEach(r => r.isGoal = false);
+
+        if (type === 'start') r.isStart = true;
+        if (type === 'goal') r.isGoal = true;
+        
+        draw();
     }
 
     // === GEOMETRY HELPERS ===
@@ -278,7 +562,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function getRoomAt(x, y) {
-        // Sjekk indre rom først
         for (let i = rooms.length - 1; i >= 0; i--) {
             const r = rooms[i];
             if (r.isOutside) continue;
@@ -288,195 +571,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return rooms.find(r => r.isOutside);
     }
 
-    // === INPUT HANDLING ===
-    function handleMouseDown(e) {
-        const pos = getMousePos(e);
-
-        if (mode === 'play') {
-            handlePlayClick(pos);
-            return;
-        }
-
-        // --- EDIT MODE ---
-        
-        if (tool === 'point') {
-            // Legg til nytt punkt
-            addPoint(pos.x, pos.y);
-        }
-        else if (tool === 'wall') {
-            // Vegg-logikk: Klikk A -> Klikk B
-            const p = getClosestPoint(pos.x, pos.y);
-            
-            if (p && p.dist < CLICK_TOLERANCE) {
-                // Vi traff et punkt
-                if (!wallStartPoint) {
-                    // Steg 1: Velg startpunkt
-                    wallStartPoint = p.point;
-                    statusText.textContent = "Startpunkt valgt. Klikk på neste punkt.";
-                } else {
-                    // Steg 2: Vi har allerede et startpunkt
-                    if (wallStartPoint !== p.point) {
-                        addWall(wallStartPoint.id, p.point.id);
-                        statusText.textContent = "Vegg laget. Velg nytt startpunkt eller fortsett.";
-                        // Vi beholder IKKE startpunktet for å lage "polylines" automatisk, 
-                        // men nullstiller for å la brukeren velge fritt.
-                        // Alternativt: wallStartPoint = p.point; (for å tegne videre)
-                        wallStartPoint = null; 
-                    } else {
-                        // Klikket på samme punkt igjen -> Avbryt
-                        wallStartPoint = null;
-                        statusText.textContent = "Avbrutt.";
-                    }
-                }
-            } else {
-                // Klikket i løse luften -> Avbryt
-                wallStartPoint = null;
-                statusText.textContent = "Klikk på et punkt for å starte en vegg.";
-            }
-        }
-        else if (tool === 'select') {
-            // 1. Dra punkt
-            const p = getClosestPoint(pos.x, pos.y);
-            if (p && p.dist < CLICK_TOLERANCE) {
-                draggingPoint = p.point;
-                return;
-            }
-
-            // 2. Endre veggfarge
-            const w = getClosestWall(pos.x, pos.y);
-            if (w && w.dist < CLICK_TOLERANCE) {
-                cycleWallColor(w.wall);
-                return;
-            }
-
-            // 3. Velg rom
-            const r = getRoomAt(pos.x, pos.y);
-            if (r) {
-                selectedRoomId = r.id;
-                draw();
-            }
-        }
-        draw();
-    }
-
-    function handleMouseMove(e) {
-        mousePos = getMousePos(e);
-        
-        if (mode === 'edit') {
-            if (draggingPoint) {
-                draggingPoint.x = mousePos.x;
-                draggingPoint.y = mousePos.y;
-                // Live update er tungt, men ser bra ut.
-                // For optimalisering: kun tegn punkter/vegger, ikke kjør recalculateRooms her.
-                draw(); 
-            }
-            else if (tool === 'select') {
-                const w = getClosestWall(mousePos.x, mousePos.y);
-                hoverWall = (w && w.dist < CLICK_TOLERANCE) ? w.wall : null;
-                draw();
-            }
-            else if (tool === 'wall' && wallStartPoint) {
-                // Tegn hjelpelinje i draw()
-                draw();
-            }
-        }
-    }
-
-    function handleMouseUp(e) {
-        if (mode === 'edit' && draggingPoint) {
-            draggingPoint = null;
-            recalculateRooms(); // Beregn rom når vi slipper punktet
-            draw();
-        }
-    }
-
-    function handlePlayClick(pos) {
-        const wObj = getClosestWall(pos.x, pos.y);
-        if (!wObj || wObj.dist > CLICK_TOLERANCE) return;
-        
-        const wall = wObj.wall;
-        
-        // Sjekk om veggen tilhører rommet vi står i
-        const adjacentRooms = rooms.filter(r => {
-            const hasP1 = r.pointIds.includes(wall.p1);
-            const hasP2 = r.pointIds.includes(wall.p2);
-            return hasP1 && hasP2; 
-        });
-
-        if (!adjacentRooms.some(r => r.id === currentRoomId)) {
-            statusText.textContent = "Du må klikke på en vegg i rommet du står i.";
-            shakeCanvas();
-            return;
-        }
-
-        if (wall.color === 'black') {
-            statusText.textContent = "Svart vegg er stengt.";
-            return;
-        }
-        if (lastWallColor !== null && wall.color === lastWallColor) {
-            statusText.textContent = `Feil! Du må bytte farge (fra ${translateColor(lastWallColor)}).`;
-            shakeCanvas();
-            return;
-        }
-
-        const nextRoom = adjacentRooms.find(r => r.id !== currentRoomId);
-        
-        if (nextRoom) {
-            currentRoomId = nextRoom.id;
-            lastWallColor = wall.color;
-            
-            if (nextRoom.isGoal) {
-                statusText.textContent = "MÅL NÅDD! Gratulerer!";
-                statusText.style.color = "green";
-            } else {
-                const req = (wall.color === 'red') ? 'BLÅ' : 'RØD';
-                statusText.textContent = `Bra. Neste vegg må være ${req}.`;
-                statusText.style.color = "#333";
-            }
-            draw();
-        }
-    }
-
-    // === ACTIONS ===
-    function addPoint(x, y) {
-        points.push({ id: Date.now(), x, y });
-        draw();
-    }
-
-    function addWall(p1Id, p2Id) {
-        const exists = walls.find(w => (w.p1 === p1Id && w.p2 === p2Id) || (w.p1 === p2Id && w.p2 === p1Id));
-        if (!exists) {
-            walls.push({ id: Date.now(), p1: p1Id, p2: p2Id, color: 'red' });
-            recalculateRooms();
-            draw();
-        }
-    }
-
-    function cycleWallColor(wall) {
-        if (wall.color === 'red') wall.color = 'blue';
-        else if (wall.color === 'blue') wall.color = 'black';
-        else if (wall.color === 'black') {
-            walls = walls.filter(w => w.id !== wall.id);
-            recalculateRooms();
-        }
-        draw();
-    }
-
-    function setRoomType(type) {
-        if (!selectedRoomId) return;
-        const r = rooms.find(r => r.id === selectedRoomId);
-        if (!r) return;
-
-        if (type === 'start') rooms.forEach(r => r.isStart = false);
-        if (type === 'goal') rooms.forEach(r => r.isGoal = false);
-
-        if (type === 'start') r.isStart = true;
-        if (type === 'goal') r.isGoal = true;
-        
-        draw();
-    }
-
-    // === HELPERS ===
     function getMousePos(e) {
         const rect = canvas.getBoundingClientRect();
         return {
@@ -547,13 +641,13 @@ document.addEventListener('DOMContentLoaded', () => {
             // Labels
             if (r.isStart) {
                 ctx.fillStyle = '#000';
-                ctx.font = 'bold 16px Arial';
-                ctx.fillText("START", r.centroid.x - 20, r.centroid.y);
+                ctx.font = 'bold 20px Arial';
+                ctx.fillText("START", r.centroid.x - 30, r.centroid.y);
             }
             if (r.isGoal) {
                 ctx.fillStyle = '#000';
-                ctx.font = 'bold 16px Arial';
-                ctx.fillText("MÅL", r.centroid.x - 15, r.centroid.y);
+                ctx.font = 'bold 20px Arial';
+                ctx.fillText("MÅL", r.centroid.x - 20, r.centroid.y);
             }
         });
 
@@ -570,6 +664,16 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.lineCap = 'round';
             ctx.strokeStyle = COLORS[w.color];
             
+            // Highlight solution
+            if (showSolution && solutionPath.includes(w.id)) {
+                ctx.lineWidth = 12;
+                ctx.strokeStyle = COLORS.solutionPath;
+                ctx.stroke();
+                // Tegn selve veggen oppå igjen
+                ctx.lineWidth = 4;
+                ctx.strokeStyle = COLORS[w.color];
+            }
+
             if (w === hoverWall) {
                 ctx.lineWidth = 10;
                 ctx.globalAlpha = 0.7;
@@ -585,7 +689,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // 3. Points & Helper Lines (Edit mode)
         if (mode === 'edit') {
-            // Hjelpelinje for vegg
             if (tool === 'wall' && wallStartPoint) {
                 ctx.beginPath();
                 ctx.moveTo(wallStartPoint.x, wallStartPoint.y);
@@ -600,10 +703,8 @@ document.addEventListener('DOMContentLoaded', () => {
             points.forEach(p => {
                 ctx.beginPath();
                 ctx.arc(p.x, p.y, POINT_RADIUS, 0, 2*Math.PI);
-                
                 if (p === wallStartPoint) ctx.fillStyle = COLORS.pointSelected;
                 else ctx.fillStyle = COLORS.point;
-                
                 ctx.fill();
             });
         }
@@ -612,18 +713,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (mode === 'play' && currentRoomId) {
             const r = rooms.find(r => r.id === currentRoomId);
             if (r) {
-                // Hvis outside, prøv å plasser spilleren nær start-teksten eller et fornuftig sted
                 let x = r.centroid.x;
                 let y = r.centroid.y;
                 
-                // Hack for å vise spilleren på utsiden hvis sentroiden er midt i banen
-                if (r.isOutside) {
-                     // Finn et punkt utenfor bounding box av alle indre punkter?
-                     // Enklere: Hvis start er satt på utsiden, tegn den ved siden av START teksten
-                     if (r.isStart) {
-                         x = 100; y = 100; // Default hjørne
-                         // Prøv å finn et punkt nær første vegg?
-                     }
+                // Hack for outside player pos
+                if (r.isOutside && r.isStart) {
+                     // Tegn nær START-teksten? Vi bruker centroid for nå.
+                     // For outside er centroid ofte midt i banen, som er rart.
+                     // Vi kan tegne den i et hjørne hvis outside?
+                     x = 50; y = 50; 
                 }
 
                 ctx.beginPath();
@@ -638,11 +736,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function createDefaultLevel() {
-        // Rent rutenett av punkter
         const startX = 150;
         const startY = 100;
         const gap = 150;
-        
         for (let r = 0; r < 4; r++) {
             for (let c = 0; c < 4; c++) {
                 points.push({
@@ -668,4 +764,4 @@ document.addEventListener('DOMContentLoaded', () => {
     init();
 });
 
-/* Version: #16 */
+/* Version: #19 */
