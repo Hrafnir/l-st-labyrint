@@ -1,13 +1,11 @@
-/* Version: #7 */
+/* Version: #12 */
 
 :root {
-    --bg-color: #f0f0f0;
+    --bg-color: #f4f4f9;
     --canvas-bg: #ffffff;
-    --line-red: #e74c3c;
-    --line-blue: #3498db;
-    --node-color: #222;
-    --player-color: #27ae60; /* Grønn spiller for god kontrast */
-    --highlight: #f1c40f;
+    --primary: #2c3e50;
+    --accent: #3498db;
+    --text: #333;
 }
 
 body {
@@ -18,105 +16,99 @@ body {
     align-items: center;
     margin: 0;
     padding: 20px;
-    min-height: 100vh;
+    color: var(--text);
 }
 
-header {
-    text-align: center;
-    margin-bottom: 15px;
-}
+h1 { margin: 0; font-size: 2rem; }
+p { margin: 5px 0 15px 0; color: #666; text-align: center; }
 
-h1 {
-    margin: 0 0 10px 0;
-    color: #333;
-}
-
-p {
-    max-width: 600px;
-    margin: 0 auto;
-    line-height: 1.5;
-}
-
-#status-display {
-    font-size: 1.2rem;
-    font-weight: bold;
-    margin-bottom: 15px;
-    padding: 10px 20px;
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    min-height: 1.5em;
-    color: #555;
-    text-align: center;
-}
-
-/* Container for canvas */
-#canvas-container {
-    padding: 10px;
-    background: white;
-    border-radius: 4px;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+#game-container {
     display: flex;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
-    /* Sikrer at canvas skalerer ned på mobil om nødvendig */
-    max-width: 100%;
-    overflow: auto;
+    width: 100%;
+    max-width: 900px;
+}
+
+#status-bar {
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    background: white;
+    padding: 10px 15px;
+    border-radius: 8px 8px 0 0;
+    box-sizing: border-box;
+    border-bottom: 1px solid #eee;
+    font-weight: bold;
+}
+
+.status-ok { color: green; }
+.status-error { color: #e74c3c; }
+.status-neutral { color: #888; }
+
+#canvas-wrapper {
+    position: relative;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    background: white;
+    border-radius: 0 0 8px 8px;
+    overflow: hidden;
 }
 
 canvas {
     background-color: var(--canvas-bg);
-    border: 2px solid #333;
-    cursor: crosshair; /* Indikerer interaktivitet */
-    touch-action: none; /* Hindrer scrolling mens man spiller på touch-skjerm */
+    cursor: default;
+    display: block;
 }
 
-/* Kontrollpanel */
-#controls {
-    margin-top: 20px;
+/* Verktøylinje */
+#editor-toolbar {
+    background: #e0e0e0;
+    padding: 10px;
     display: flex;
-    gap: 10px;
     flex-wrap: wrap;
+    gap: 15px;
+    align-items: center;
     justify-content: center;
+    border-top: 1px solid #ccc;
 }
+
+.toolbar-group {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+    padding-right: 15px;
+    border-right: 1px solid #ccc;
+}
+.toolbar-group:last-child { border-right: none; }
 
 button {
-    padding: 10px 20px;
-    font-size: 1rem;
+    padding: 6px 12px;
+    font-size: 0.9rem;
     cursor: pointer;
-    background-color: #34495e;
-    color: white;
-    border: none;
+    background-color: #fff;
+    color: #333;
+    border: 1px solid #aaa;
     border-radius: 4px;
-    transition: background-color 0.2s;
+    transition: all 0.2s;
 }
 
-button:hover {
-    background-color: #2c3e50;
+button:hover { background-color: #f0f0f0; }
+
+button.active {
+    background-color: var(--primary);
+    color: white;
+    border-color: var(--primary);
 }
 
-button:disabled {
-    background-color: #bdc3c7;
-    cursor: not-allowed;
+button#btn-solve { background-color: #27ae60; color: white; border: none; }
+button#btn-solve:hover { background-color: #219150; }
+
+.instruction-small {
+    font-size: 0.75rem;
+    color: #666;
+    margin-left: 5px;
+    max-width: 150px;
+    line-height: 1.2;
 }
 
-button#btn-download {
-    background-color: #e67e22;
-}
-button#btn-download:hover {
-    background-color: #d35400;
-}
-
-#debug-log {
-    margin-top: 20px;
-    font-family: monospace;
-    font-size: 0.8rem;
-    color: #777;
-    white-space: pre-wrap;
-    max-width: 600px;
-    width: 100%;
-    border-top: 1px solid #ddd;
-    padding-top: 10px;
-}
-
-/* Version: #7 */
+/* Version: #12 */
