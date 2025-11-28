@@ -1,30 +1,34 @@
-<!-- Version: #1 -->
+<!-- Version: #6 -->
 <!DOCTYPE html>
 <html lang="no">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Farge-Labyrinten</title>
+    <title>Linje-Labyrinten</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Bibliotek for eksport til bilde -->
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
 </head>
 <body>
 
     <div id="game-container">
         <header>
-            <h1>Farge-Labyrinten</h1>
-            <p>Start ved start, gå til mål. Regel: Rød -> Blå -> Rød -> Blå.</p>
+            <h1>Linje-Labyrinten</h1>
+            <p>Start ved <strong>INN</strong>. Gå til <strong>UT</strong>.<br>
+            Regel: Du må bytte linjefarge for hvert trekk (Rød &rarr; Blå &rarr; Rød...).</p>
         </header>
 
-        <div id="status-display">Velkommen! Laster spillet...</div>
+        <div id="status-display">Laster inn banen...</div>
 
-        <!-- Selve spillbrettet genereres her av script.js -->
-        <div id="board-container">
-            <div id="game-board"></div>
+        <!-- Canvas erstatter det gamle rutenettet -->
+        <div id="canvas-container">
+            <canvas id="game-canvas" width="600" height="700"></canvas>
         </div>
 
         <div id="controls">
-            <button id="btn-reset">Nullstill Nivå</button>
-            <button id="btn-generate" disabled>Generer Nytt Nivå (Kommer)</button>
+            <button id="btn-reset">Start på nytt</button>
+            <button id="btn-generate" disabled>Generer Ny Bane (Kommer)</button>
+            <button id="btn-download">Last ned Bilde</button>
         </div>
         
         <div id="debug-log" style="display:none;"></div>
@@ -33,4 +37,4 @@
     <script src="script.js"></script>
 </body>
 </html>
-<!-- Version: #1 -->
+<!-- Version: #6 -->
