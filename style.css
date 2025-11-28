@@ -1,4 +1,4 @@
-/* Version: #12 */
+/* Version: #14 */
 
 :root {
     --bg-color: #f4f4f9;
@@ -17,6 +17,7 @@ body {
     margin: 0;
     padding: 20px;
     color: var(--text);
+    user-select: none; /* Hindre tekstmarkering mens man tegner */
 }
 
 h1 { margin: 0; font-size: 2rem; }
@@ -40,11 +41,8 @@ p { margin: 5px 0 15px 0; color: #666; text-align: center; }
     box-sizing: border-box;
     border-bottom: 1px solid #eee;
     font-weight: bold;
+    color: #555;
 }
-
-.status-ok { color: green; }
-.status-error { color: #e74c3c; }
-.status-neutral { color: #888; }
 
 #canvas-wrapper {
     position: relative;
@@ -60,7 +58,6 @@ canvas {
     display: block;
 }
 
-/* Verktøylinje */
 #editor-toolbar {
     background: #e0e0e0;
     padding: 10px;
@@ -81,6 +78,13 @@ canvas {
 }
 .toolbar-group:last-child { border-right: none; }
 
+.separator {
+    width: 1px;
+    height: 20px;
+    background: #999;
+    margin: 0 5px;
+}
+
 button {
     padding: 6px 12px;
     font-size: 0.9rem;
@@ -100,15 +104,7 @@ button.active {
     border-color: var(--primary);
 }
 
-button#btn-solve { background-color: #27ae60; color: white; border: none; }
-button#btn-solve:hover { background-color: #219150; }
+button#btn-set-start { background-color: #e8f8f5; border-color: #2ecc71; color: #27ae60; }
+button#btn-set-goal { background-color: #fdedec; border-color: #e74c3c; color: #c0392b; }
 
-.instruction-small {
-    font-size: 0.75rem;
-    color: #666;
-    margin-left: 5px;
-    max-width: 150px;
-    line-height: 1.2;
-}
-
-/* Version: #12 */
+/* Version: #14 */
