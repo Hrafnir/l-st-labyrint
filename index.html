@@ -1,10 +1,10 @@
-<!-- Version: #11 -->
+<!-- Version: #13 -->
 <!DOCTYPE html>
 <html lang="no">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Linje-Labyrinten Editor</title>
+    <title>Linje-Labyrinten Pro</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,20 +12,18 @@
     <div id="game-container">
         <header>
             <h1>Linje-Labyrinten</h1>
-            <p>Klikk på veggene for å gå gjennom dem.<br>
+            <p><strong>Du er i rommet.</strong> Klikk på en vegg for å gå gjennom den.<br>
             Regel: Rød &rarr; Blå &rarr; Rød...</p>
         </header>
 
-        <!-- Status og Løser-info -->
         <div id="status-bar">
             <span id="status-text">Velkommen!</span>
-            <span id="solver-status" class="status-neutral">Sjekker brett...</span>
+            <span id="room-count">0 Rom oppdaget</span>
         </div>
 
         <div id="canvas-wrapper">
-            <canvas id="game-canvas" width="800" height="600"></canvas>
+            <canvas id="game-canvas" width="800" height="600" oncontextmenu="return false;"></canvas>
             
-            <!-- Verktøylinje for Editor -->
             <div id="editor-toolbar">
                 <div class="toolbar-group">
                     <strong>Modus:</strong>
@@ -34,17 +32,21 @@
                 </div>
                 
                 <div class="toolbar-group" id="edit-tools" style="display:none;">
-                    <strong>Verktøy:</strong>
-                    <button id="btn-tool-move" class="tool-btn active" title="Flytt noder">✋ Flytt</button>
-                    <button id="btn-tool-node" class="tool-btn" title="Legg til rom (punkt)">📍 Nytt Rom</button>
-                    <button id="btn-tool-wall" class="tool-btn" title="Tegn vegg (dra mellom punkter)">➖ Ny Vegg</button>
-                    <div class="instruction-small">Klikk på vegger for å endre farge/slette.</div>
+                    <strong>Tegn:</strong>
+                    <button id="btn-tool-point" class="tool-btn" title="Lag hjørner (punkter)">📍 Punkt</button>
+                    <button id="btn-tool-wall" class="tool-btn" title="Dra mellom punkter">➖ Vegg</button>
+                    <button id="btn-tool-select" class="tool-btn active" title="Velg rom/vegger">👆 Velg/Flytt</button>
+                    
+                    <div class="separator"></div>
+                    
+                    <strong>Rom:</strong>
+                    <button id="btn-set-start" title="Sett valgt rom som Start">🏁 Sett Start</button>
+                    <button id="btn-set-goal" title="Sett valgt rom som Mål">🏆 Sett Mål</button>
                 </div>
 
                 <div class="toolbar-group">
-                    <button id="btn-solve">Vis Løsning</button>
-                    <button id="btn-clear">Tøm Brett</button>
-                    <button id="btn-download">Last ned Bilde</button>
+                    <button id="btn-clear">Tøm Alt</button>
+                    <button id="btn-download">Last ned</button>
                 </div>
             </div>
         </div>
@@ -55,4 +57,4 @@
     <script src="script.js"></script>
 </body>
 </html>
-<!-- Version: #11 -->
+<!-- Version: #13 -->
