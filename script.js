@@ -1,463 +1,603 @@
-/* Version: #10 */
+/* Version: #12 */
 
 document.addEventListener('DOMContentLoaded', () => {
-    // === KONFIGURASJON ===
+    // === DOM ELEMENTER ===
     const canvas = document.getElementById('game-canvas');
     const ctx = canvas.getContext('2d');
-    const statusElement = document.getElementById('status-display');
-    const btnReset = document.getElementById('btn-reset');
-    const btnGenerate = document.getElementById('btn-generate');
-    const btnDownload = document.getElementById('btn-download');
-    const debugLog = document.getElementById('debug-log');
-
-    // Farger
-    const COLOR_RED = '#e74c3c';
-    const COLOR_BLUE = '#3498db';
-    const COLOR_WALL_DEFAULT = '#ddd'; // For vegger som ikke er i bruk (hvis noen)
-    const COLOR_PILLAR = '#222';
-    const COLOR_PLAYER = '#27ae60';
-    const COLOR_HIGHLIGHT = 'rgba(241, 196, 15, 0.4)'; // Gult lys i naborom
-
-    // === DATASTRUKTUR ===
-    // En level består nå av ROOMS (hvor spilleren er) og WALLS (forbindelser).
+    const statusText = document.getElementById('status-text');
+    const solverStatus = document.getElementById('solver-status');
     
-    // Hjelpefunksjon for å definere en vegg mellom to rom
-    // Coordinates [x1, y1, x2, y2] er kun for tegning. Logic bruker roomA og roomB id.
-    function createWall(roomA, roomB, color, coords) {
-        return { roomA, roomB, color, coords };
-    }
+    // Knapper
+    const btnModePlay = document.getElementById('btn-mode-play');
+    const btnModeEdit = document.getElementById('btn-mode-edit');
+    const editTools = document.getElementById('edit-tools');
+    const btnToolMove = document.getElementById('btn-tool-move');
+    const btnToolNode = document.getElementById('btn-tool-node');
+    const btnToolWall = document.getElementById('btn-tool-wall');
+    const btnSolve = document.getElementById('btn-solve');
+    const btnClear = document.getElementById('btn-clear');
+    const btnDownload = document.getElementById('btn-download');
 
-    const levels = [
-        {
-            id: 1,
-            name: "Nivå 1: Håndtegnet Kopi",
-            // Rommene defineres som sentrumspunkter (x,y)
-            rooms: [
-                { id: 0, x: 500, y: 600, label: "INN" }, // Start (Nede høyre)
-                { id: 1, x: 300, y: 600 },               // Nede midt
-                { id: 2, x: 100, y: 550 },               // Nede venstre (trekant)
-                { id: 3, x: 500, y: 350 },               // Midt høyre
-                { id: 4, x: 300, y: 350 },               // Senter
-                { id: 5, x: 500, y: 100, label: "UT" },  // Oppe høyre (Mål)
-                { id: 6, x: 300, y: 100 },               // Oppe midt
-                { id: 7, x: 100, y: 250 }                // Venstre stor
-            ],
-            // Veggene definerer logikken (hvem er nabo med hvem) og visuelt utseende
-            walls: [
-                // Fra Room 0 (Start)
-                createWall(0, 1, 'blue', [400, 650, 400, 500]), // Vertikal-ish skille? Nei, bilde 2 viser horisontale og vertikale vegger.
-                // La oss visualisere veggene basert på bilde 2 sine svarte prikker.
-                // Vegg mellom 0 og 1 (Blå)
-                createWall(0, 1, 'blue', [400, 650, 400, 500]), 
-                // Vegg mellom 0 og 3 (Rød) - Oppover
-                createWall(0, 3, 'red', [400, 500, 600, 500]),
+    // === KONFIGURASJON ===
+    const COLORS = {
+        red: '#e74c3c',
+        blue: '#3498db',
+        black: '#2c3e50', // Sperring
+        player: '#27ae60',
+        node: '#95a5a6',
+        startNode: '#2ecc71',
+        goalNode: '#e74c3c',
+        highlight: 'rgba(46, 204, 113, 0.5)' // Løsningsvei
+    };
 
-                // Bunnrekka videre
-                createWall(1, 2, 'blue', [200, 650, 200, 500]), // Mellom midt og venstre
-                createWall(1, 4, 'red', [200, 500, 400, 500]),  // Opp fra midt
+    const NODE_RADIUS = 8;
+    const WALL_WIDTH = 8;
+    const CLICK_TOLERANCE = 15;
 
-                // Senteret
-                createWall(3, 4, 'blue', [400, 500, 400, 200]), // Mellom H-Midt og Senter
-                createWall(3, 5, 'red', [400, 200, 600, 200]),  // Opp til Mål
+    // === TILSTAND (STATE) ===
+    let appMode = 'play'; // 'play' eller 'edit'
+    let editTool = 'move'; // 'move', 'node', 'wall'
+    
+    // Nivå data
+    let rooms = []; // { id, x, y, isStart, isGoal }
+    let walls = []; // { id, roomA, roomB, color }
+    
+    // Spilltilstand
+    let currentRoomId = null;
+    let lastWallColor = null; // 'red', 'blue', null
+    let solutionPath = []; // For å vise løsning
+    let showSolution = false;
+    let isSolvable = false;
 
-                // Venstre/Senter komplekset
-                createWall(4, 7, 'blue', [200, 500, 200, 200]), // Senter til Venstre
-                createWall(2, 7, 'blue', [50, 400, 200, 500]),  // Diagonal nede
-                
-                // Toppen
-                createWall(5, 6, 'blue', [400, 200, 400, 50]),  // Mellom Mål og Topp-Midt
-                createWall(4, 6, 'red', [200, 200, 400, 200]),  // Senter opp til Topp-Midt
-                createWall(6, 7, 'red', [200, 200, 200, 50]),   // Venstre opp
-            ],
-            // Pillars (kun for pynt/hjørner)
-            pillars: [
-                {x: 400, y: 650}, {x: 400, y: 500}, {x: 600, y: 500},
-                {x: 200, y: 650}, {x: 200, y: 500}, {x: 50, y: 400},
-                {x: 400, y: 200}, {x: 600, y: 200}, {x: 200, y: 200},
-                {x: 400, y: 50},  {x: 200, y: 50}
-            ],
-            startRoom: 0,
-            goalRoom: 5
-        }
-    ];
+    // Editeringstilstand
+    let draggingNode = null;
+    let wallStartNode = null; // Når man drar en ny vegg
 
-    // === TILSTAND ===
-    let currentLevel = null;
-    let currentRoomId = 0;
-    let lastWallColor = null; // 'red', 'blue' eller null
-
-    // === LOGGING ===
-    function log(msg) {
-        const timestamp = new Date().toLocaleTimeString();
-        console.log(`[${timestamp}] ${msg}`);
-        if (debugLog) {
-            debugLog.textContent = `[${timestamp}] ${msg}\n` + debugLog.textContent;
-        }
-    }
-
-    // === GENERATOR (GRID BASED) ===
-    function generateRandomLevel() {
-        log("Genererer rom-basert labyrint...");
+    // === INITIALISERING ===
+    function init() {
+        // Lag et standard brett
+        createDefaultLevel();
         
-        // Grid konfigurasjon
-        const cols = 4;
-        const rows = 5;
-        const padding = 50;
-        const cellWidth = (canvas.width - padding*2) / cols;
-        const cellHeight = (canvas.height - padding*2) / rows;
-
-        let rooms = [];
-        let walls = [];
-        let pillars = [];
-
-        // 1. Opprett Rom (Celler)
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                rooms.push({
-                    id: r * cols + c,
-                    x: padding + c * cellWidth + cellWidth/2,
-                    y: padding + r * cellHeight + cellHeight/2,
-                    gridX: c,
-                    gridY: r
-                });
-            }
-        }
-        
-        const startRoomId = rooms.length - 1; // Nede høyre
-        const goalRoomId = 0; // Oppe venstre
-        rooms[startRoomId].label = "INN";
-        rooms[goalRoomId].label = "UT";
-
-        // 2. Generer naboer og vegger
-        // Vi lager først en liste over ALLE mulige vegger mellom naboer
-        let allEdges = [];
-        
-        // Hjelpefunksjon for koordinater til vegg
-        function getWallCoords(r1, r2) {
-            // Hvis naboer horisontalt
-            if (r1.gridY === r2.gridY) {
-                const x = Math.max(r1.x, r2.x) - cellWidth/2;
-                const topY = r1.y - cellHeight/2;
-                const botY = r1.y + cellHeight/2;
-                return [x, topY, x, botY];
-            }
-            // Hvis naboer vertikalt
-            else {
-                const y = Math.max(r1.y, r2.y) - cellHeight/2;
-                const leftX = r1.x - cellWidth/2;
-                const rightX = r1.x + cellWidth/2;
-                return [leftX, y, rightX, y];
-            }
-        }
-
-        rooms.forEach(room => {
-            const neighbors = [];
-            // Høyre nabo
-            if (room.gridX < cols - 1) neighbors.push(rooms.find(r => r.gridX === room.gridX + 1 && r.gridY === room.gridY));
-            // Nedre nabo
-            if (room.gridY < rows - 1) neighbors.push(rooms.find(r => r.gridX === room.gridX && r.gridY === room.gridY + 1));
-            
-            neighbors.forEach(n => {
-                allEdges.push({
-                    u: room.id,
-                    v: n.id,
-                    coords: getWallCoords(room, n),
-                    color: null // Bestemmes senere
-                });
-            });
-        });
-
-        // 3. Finn en sti (BFS) for å garantere løsning
-        const adj = Array.from({length: rooms.length}, () => []);
-        allEdges.forEach((e, index) => {
-            adj[e.u].push({ to: e.v, edgeIndex: index });
-            adj[e.v].push({ to: e.u, edgeIndex: index });
-        });
-
-        // BFS for å finne sti
-        let queue = [{ curr: startRoomId, path: [] }]; // path inneholder edgeIndex
-        let visited = new Set([startRoomId]);
-        let solutionPathIndices = null;
-
-        // Randomiser kø-utvalg for variasjon
-        while(queue.length > 0) {
-            // Grab random element for maze randomness look
-            let idx = Math.floor(Math.random() * queue.length); 
-            // Men BFS bør ideelt sett gå bredt. La oss bruke DFS-ish (stack) eller kø med random pick?
-            // La oss bruke standard BFS men shuffle naboer.
-            let item = queue.shift();
-            
-            if (item.curr === goalRoomId) {
-                solutionPathIndices = item.path;
-                break;
-            }
-
-            let neighbors = adj[item.curr];
-            neighbors.sort(() => Math.random() - 0.5);
-
-            for (let n of neighbors) {
-                if (!visited.has(n.to)) {
-                    visited.add(n.to);
-                    queue.push({ curr: n.to, path: [...item.path, n.edgeIndex] });
-                }
-            }
-        }
-
-        if (!solutionPathIndices) {
-            log("Feil: Fant ingen sti. Prøver på nytt.");
-            return generateRandomLevel();
-        }
-
-        // 4. Fargelegg stien (R-B-R-B)
-        // Vi starter med å bestemme at første vegg er, tja, Rød?
-        let nextColor = Math.random() > 0.5 ? 'red' : 'blue';
-        
-        solutionPathIndices.forEach(idx => {
-            allEdges[idx].color = nextColor;
-            nextColor = (nextColor === 'red') ? 'blue' : 'red';
-        });
-
-        // 5. Fargelegg resten tilfeldig
-        allEdges.forEach(e => {
-            if (!e.color) {
-                e.color = Math.random() > 0.5 ? 'red' : 'blue';
-            }
-            // Konverter til formatet motoren bruker
-            walls.push(createWall(e.u, e.v, e.color, e.coords));
-        });
-
-        // Generer pillars for grid corners (visuelt)
-        for(let r=0; r<=rows; r++) {
-            for(let c=0; c<=cols; c++) {
-                pillars.push({
-                    x: padding + c*cellWidth,
-                    y: padding + r*cellHeight
-                });
-            }
-        }
-
-        return {
-            id: Date.now(),
-            name: `Generert ${cols}x${rows}`,
-            rooms: rooms,
-            walls: walls,
-            pillars: pillars,
-            startRoom: startRoomId,
-            goalRoom: goalRoomId
-        };
-    }
-
-
-    // === MOTOR ===
-
-    function initGame() {
-        log("Starter Linje-Labyrinten (Rom-modus)...");
-        
-        btnGenerate.disabled = false;
-        btnGenerate.textContent = "Generer Ny Bane";
-
-        loadLevel(0);
-
-        // Input håndtering
-        canvas.addEventListener('mousedown', handleInput);
-        canvas.addEventListener('touchstart', (e) => {
-            e.preventDefault(); 
-            handleInput(e.touches[0]);
-        }, {passive: false});
-
-        btnReset.addEventListener('click', () => {
-             // Reset logikk
-             currentRoomId = currentLevel.startRoom;
-             lastWallColor = null;
-             statusElement.textContent = `Nullstilt.`;
-             statusElement.style.color = "#555";
-             draw();
-        });
-
-        btnGenerate.addEventListener('click', () => {
-            const newLevel = generateRandomLevel();
-            levels.push(newLevel);
-            loadLevel(levels.length - 1);
-        });
-
-        btnDownload.addEventListener('click', downloadImage);
-    }
-
-    function loadLevel(index) {
-        currentLevel = levels[index];
-        currentRoomId = currentLevel.startRoom;
-        lastWallColor = null;
-        
-        statusElement.textContent = `Gå gjennom en vegg for å starte.`;
-        statusElement.style.color = "#555";
-        
+        // Start opp
+        setMode('play');
+        checkSolvability();
         draw();
-        log(`Lastet nivå: ${currentLevel.name}`);
     }
 
-    function handleInput(e) {
-        const rect = canvas.getBoundingClientRect();
-        const scaleX = canvas.width / rect.width;
-        const scaleY = canvas.height / rect.height;
-        const x = (e.clientX - rect.left) * scaleX;
-        const y = (e.clientY - rect.top) * scaleY;
+    // === EVENT LISTENERS ===
+    canvas.addEventListener('mousedown', handleMouseDown);
+    canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseup', handleMouseUp);
+    
+    // Touch support (enkel mapping)
+    canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        const touch = e.touches[0];
+        handleMouseDown({ clientX: touch.clientX, clientY: touch.clientY });
+    }, {passive: false});
 
-        // Finn hvilket rom bruker klikket i
-        let clickedRoomId = -1;
-        let minDesc = 9999;
-        
-        // Enkel sjekk: Nærmeste rom-senter
-        currentLevel.rooms.forEach(room => {
-            const dist = Math.sqrt(Math.pow(x - room.x, 2) + Math.pow(y - room.y, 2));
-            // Vi kan anta at hvis dist < 50 (ca halv cell size) så mente man det rommet
-            if (dist < 60) {
-                clickedRoomId = room.id;
-            }
-        });
+    // UI Knapper
+    btnModePlay.addEventListener('click', () => setMode('play'));
+    btnModeEdit.addEventListener('click', () => setMode('edit'));
+    
+    btnToolMove.addEventListener('click', () => setTool('move'));
+    btnToolNode.addEventListener('click', () => setTool('node'));
+    btnToolWall.addEventListener('click', () => setTool('wall'));
 
-        if (clickedRoomId !== -1 && clickedRoomId !== currentRoomId) {
-            tryMoveTo(clickedRoomId);
+    btnSolve.addEventListener('click', () => {
+        if (!isSolvable) return;
+        showSolution = !showSolution;
+        if (showSolution) {
+            btnSolve.textContent = "Skjul Løsning";
+            runSolver(true); // Kjør full solve for å få path
+        } else {
+            btnSolve.textContent = "Vis Løsning";
+            solutionPath = [];
         }
+        draw();
+    });
+
+    btnClear.addEventListener('click', () => {
+        if(confirm("Er du sikker på at du vil tømme brettet?")) {
+            rooms = [];
+            walls = [];
+            currentRoomId = null;
+            lastWallColor = null;
+            addRoom(100, 300, true); // Start
+            addRoom(700, 300, false, true); // Mål
+            checkSolvability();
+            draw();
+        }
+    });
+
+    btnDownload.addEventListener('click', downloadImage);
+
+    // === FUNKSJONER FOR MODUS OG VERKTØY ===
+    function setMode(mode) {
+        appMode = mode;
+        if (mode === 'play') {
+            btnModePlay.classList.add('active');
+            btnModeEdit.classList.remove('active');
+            editTools.style.display = 'none';
+            statusText.textContent = "Spillmodus: Klikk på vegger for å gå.";
+            // Reset spill
+            resetGame();
+        } else {
+            btnModeEdit.classList.add('active');
+            btnModePlay.classList.remove('active');
+            editTools.style.display = 'flex';
+            statusText.textContent = "Redigering: Endre brettet.";
+            showSolution = false;
+            btnSolve.textContent = "Vis Løsning";
+            // Sikre at vi har start/mål
+            ensureStartAndGoal();
+        }
+        draw();
     }
 
-    function tryMoveTo(targetRoomId) {
-        // 1. Sjekk om rommene henger sammen med en vegg
-        const wall = currentLevel.walls.find(w => 
-            (w.roomA === currentRoomId && w.roomB === targetRoomId) ||
-            (w.roomA === targetRoomId && w.roomB === currentRoomId)
-        );
+    function setTool(tool) {
+        editTool = tool;
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        if (tool === 'move') btnToolMove.classList.add('active');
+        if (tool === 'node') btnToolNode.classList.add('active');
+        if (tool === 'wall') btnToolWall.classList.add('active');
+    }
 
-        if (!wall) {
-            log("Ingen vegg mellom disse rommene.");
-            return; // Ikke naboer
-        }
+    // === LOGIKK: SPILL ===
+    
+    function resetGame() {
+        const start = rooms.find(r => r.isStart);
+        if (start) currentRoomId = start.id;
+        else if (rooms.length > 0) currentRoomId = rooms[0].id;
+        lastWallColor = null;
+        checkSolvability();
+    }
 
-        // 2. Sjekk fargeregel
-        // Regel: Ny farge må være motsatt av forrige.
-        // Unntak: Start (lastWallColor er null)
-        
-        if (lastWallColor !== null && wall.color === lastWallColor) {
-            log(`STOPP! Du gikk gjennom ${translateColor(lastWallColor)} sist. Må velge motsatt.`);
-            statusElement.textContent = `Feil! Du må bytte farge (fra ${translateColor(lastWallColor)}).`;
-            statusElement.style.color = "red";
-            
-            // Rist
-            canvas.style.transform = "translateX(5px)";
-            setTimeout(() => canvas.style.transform = "translateX(0)", 100);
+    function tryMoveThroughWall(wall) {
+        // 1. Sjekk farge
+        if (wall.color === 'black') {
+            shakeCanvas();
+            statusText.textContent = "Svarte vegger er sperret!";
             return;
         }
 
-        // 3. Utfør flytt
-        currentRoomId = targetRoomId;
-        lastWallColor = wall.color;
-        
-        const nextColorReq = (wall.color === 'red') ? 'BLÅ' : 'RØD';
-        statusElement.textContent = `Bra! Neste vegg må være ${nextColorReq}.`;
-        statusElement.style.color = "#555";
-
-        if (currentRoomId === currentLevel.goalRoom) {
-            statusElement.textContent = "GRATULERER! DU KOM UT!";
-            statusElement.style.color = "green";
-            log("Mål nådd!");
+        if (lastWallColor !== null && wall.color === lastWallColor) {
+            shakeCanvas();
+            statusText.textContent = `Feil! Du må bytte farge (fra ${translateColor(lastWallColor)}).`;
+            return;
         }
 
+        // 2. Sjekk at veggen faktisk kobler til rommet vi er i
+        let nextRoomId = null;
+        if (wall.roomA === currentRoomId) nextRoomId = wall.roomB;
+        else if (wall.roomB === currentRoomId) nextRoomId = wall.roomA;
+        else {
+            // Veggen er ikke koblet til der vi står
+            statusText.textContent = "Du kan bare gå gjennom vegger i rommet du er i.";
+            return;
+        }
+
+        // 3. Utfør trekk
+        currentRoomId = nextRoomId;
+        lastWallColor = wall.color;
+        
+        const r = rooms.find(r => r.id === currentRoomId);
+        if (r && r.isGoal) {
+            statusText.textContent = "MÅL NÅDD! Gratulerer!";
+            statusText.style.color = "green";
+        } else {
+            const nextReq = (wall.color === 'red') ? 'BLÅ' : 'RØD';
+            statusText.textContent = `Bra. Neste må være ${nextReq}.`;
+            statusText.style.color = "#333";
+        }
+
+        // Oppdater løser-status i real-time
+        checkSolvability(); 
         draw();
+    }
+
+    // === LOGIKK: REDIGERING ===
+
+    function handleMouseDown(e) {
+        const pos = getMousePos(e);
+
+        if (appMode === 'play') {
+            // I Play-mode klikker vi på vegger
+            const clickedWall = getClosestWall(pos.x, pos.y);
+            if (clickedWall && clickedWall.dist < CLICK_TOLERANCE) {
+                tryMoveThroughWall(clickedWall.wall);
+            }
+            return;
+        }
+
+        // Edit Mode
+        if (editTool === 'move') {
+            const node = getClosestNode(pos.x, pos.y);
+            if (node && node.dist < NODE_RADIUS * 2) {
+                draggingNode = node.room;
+            } else {
+                // Sjekk om vi klikket på en vegg for å endre farge
+                const wallObj = getClosestWall(pos.x, pos.y);
+                if (wallObj && wallObj.dist < CLICK_TOLERANCE) {
+                    cycleWallColor(wallObj.wall);
+                }
+            }
+        } 
+        else if (editTool === 'node') {
+            addRoom(pos.x, pos.y);
+        }
+        else if (editTool === 'wall') {
+            const node = getClosestNode(pos.x, pos.y);
+            if (node && node.dist < NODE_RADIUS * 2) {
+                wallStartNode = node.room;
+            }
+        }
+        draw();
+    }
+
+    function handleMouseMove(e) {
+        const pos = getMousePos(e);
+        if (draggingNode) {
+            draggingNode.x = pos.x;
+            draggingNode.y = pos.y;
+            draw();
+        } else if (wallStartNode) {
+            // Tegn midlertidig strek
+            draw();
+            ctx.beginPath();
+            ctx.moveTo(wallStartNode.x, wallStartNode.y);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.strokeStyle = '#999';
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+
+    function handleMouseUp(e) {
+        const pos = getMousePos(e);
+
+        if (appMode === 'edit') {
+            if (draggingNode) {
+                draggingNode = null;
+                checkSolvability();
+            } 
+            else if (wallStartNode) {
+                const target = getClosestNode(pos.x, pos.y);
+                if (target && target.dist < NODE_RADIUS * 2 && target.room.id !== wallStartNode.id) {
+                    addWall(wallStartNode.id, target.room.id);
+                }
+                wallStartNode = null;
+                checkSolvability();
+            }
+        }
+        draw();
+    }
+
+    // === HJELPEFUNKSJONER DATA ===
+
+    function addRoom(x, y, isStart = false, isGoal = false) {
+        const id = Date.now() + Math.floor(Math.random()*1000);
+        rooms.push({ id, x, y, isStart, isGoal });
+        checkSolvability();
+        draw();
+    }
+
+    function addWall(idA, idB) {
+        // Sjekk om vegg finnes fra før
+        const exists = walls.find(w => (w.roomA === idA && w.roomB === idB) || (w.roomA === idB && w.roomB === idA));
+        if (exists) return;
+
+        walls.push({
+            id: Date.now(),
+            roomA: idA,
+            roomB: idB,
+            color: 'red' // Default
+        });
+    }
+
+    function cycleWallColor(wall) {
+        if (wall.color === 'red') wall.color = 'blue';
+        else if (wall.color === 'blue') wall.color = 'black';
+        else if (wall.color === 'black') {
+            // Slett vegg
+            walls = walls.filter(w => w.id !== wall.id);
+        }
+        checkSolvability();
+        draw();
+    }
+
+    function ensureStartAndGoal() {
+        if (!rooms.some(r => r.isStart) && rooms.length > 0) rooms[0].isStart = true;
+        if (!rooms.some(r => r.isGoal) && rooms.length > 1) rooms[rooms.length-1].isGoal = true;
+    }
+
+    function createDefaultLevel() {
+        // Opprett en 3x3 grid for demo
+        const grid = [];
+        for(let y=0; y<3; y++) {
+            for(let x=0; x<3; x++) {
+                addRoom(200 + x*150, 150 + y*150);
+            }
+        }
+        // Sett start og mål
+        rooms[0].isStart = true;
+        rooms[rooms.length-1].isGoal = true;
+        currentRoomId = rooms[0].id;
+
+        // Koble noen vegger
+        const ids = rooms.map(r => r.id);
+        addWall(ids[0], ids[1]); // R
+        addWall(ids[1], ids[2]); // R -> B (change later)
+        addWall(ids[0], ids[3]); // R
+        addWall(ids[3], ids[4]); 
+        addWall(ids[4], ids[5]);
+        addWall(ids[4], ids[1]);
+        addWall(ids[5], ids[8]);
+        
+        // Juster farger manuelt for demo
+        walls[1].color = 'blue';
+        walls[3].color = 'blue';
+        walls[6].color = 'blue';
+    }
+
+    // === MATEMATIKK & GEOMETRI ===
+
+    function getMousePos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        return {
+            x: (e.clientX - rect.left) * scaleX,
+            y: (e.clientY - rect.top) * scaleY
+        };
+    }
+
+    function getClosestNode(x, y) {
+        let closest = null;
+        let minDst = Infinity;
+        rooms.forEach(r => {
+            const d = Math.hypot(r.x - x, r.y - y);
+            if (d < minDst) {
+                minDst = d;
+                closest = r;
+            }
+        });
+        return closest ? { room: closest, dist: minDst } : null;
+    }
+
+    function getClosestWall(x, y) {
+        let closest = null;
+        let minDst = Infinity;
+
+        walls.forEach(w => {
+            const rA = rooms.find(r => r.id === w.roomA);
+            const rB = rooms.find(r => r.id === w.roomB);
+            if (!rA || !rB) return;
+
+            // Avstand fra punkt til linjestykke
+            const dist = distToSegment({x,y}, rA, rB);
+            if (dist < minDst) {
+                minDst = dist;
+                closest = w;
+            }
+        });
+        return closest ? { wall: closest, dist: minDst } : null;
+    }
+
+    function distToSegment(p, v, w) {
+        const l2 = (v.x - w.x)**2 + (v.y - w.y)**2;
+        if (l2 == 0) return Math.hypot(p.x - v.x, p.y - v.y);
+        let t = ((p.x - v.x) * (w.x - v.x) + (p.y - v.y) * (w.y - v.y)) / l2;
+        t = Math.max(0, Math.min(1, t));
+        const proj = { x: v.x + t * (w.x - v.x), y: v.y + t * (w.y - v.y) };
+        return Math.hypot(p.x - proj.x, p.y - proj.y);
+    }
+
+    // === LØSER (BFS) ===
+
+    function runSolver(savePath = false) {
+        // State: { currentRoomId, lastColor, path }
+        // Vi må unngå uendelige løkker. En "tilstand" er (rom + farge ankommet med).
+        // Å besøke rom A med Rød er annerledes enn rom A med Blå.
+
+        const startRoom = rooms.find(r => r.isStart);
+        if (!startRoom) return false;
+
+        // Initial state: Start rom, ingen lastColor
+        // MERK: Vi bruker lastColor fra nåværende spilltilstand hvis vi bare sjekker
+        // for å se om man KAN løse det fra der man står.
+        // Men "checkSolvability" bør sjekke fra START hvis vi er i edit, eller CURRENT hvis play.
+        
+        let startNodeId = (appMode === 'play') ? currentRoomId : startRoom.id;
+        let startColor = (appMode === 'play') ? lastWallColor : null;
+
+        let queue = [{ 
+            r: startNodeId, 
+            c: startColor, 
+            path: [] 
+        }];
+        
+        let visited = new Set();
+        visited.add(`${startNodeId}-${startColor}`);
+
+        while (queue.length > 0) {
+            let curr = queue.shift();
+
+            // Sjekk om mål
+            const rObj = rooms.find(r => r.id === curr.r);
+            if (rObj && rObj.isGoal) {
+                if (savePath) {
+                    solutionPath = curr.path;
+                }
+                return true;
+            }
+
+            // Finn naboer via vegger
+            walls.forEach(w => {
+                // Er veggen koblet til dette rommet?
+                let neighborId = null;
+                if (w.roomA === curr.r) neighborId = w.roomB;
+                else if (w.roomB === curr.r) neighborId = w.roomA;
+
+                if (neighborId !== null) {
+                    // Er veggen passbar?
+                    if (w.color === 'black') return;
+                    
+                    // Fargesjekk (Må være ulik forrige)
+                    if (curr.c === null || w.color !== curr.c) {
+                        const stateKey = `${neighborId}-${w.color}`;
+                        if (!visited.has(stateKey)) {
+                            visited.add(stateKey);
+                            
+                            // Legg til i kø
+                            // Path lagrer ID til veggene vi går gjennom
+                            let newPath = savePath ? [...curr.path, {
+                                wallId: w.id,
+                                x: (rooms.find(rm=>rm.id===w.roomA).x + rooms.find(rm=>rm.id===w.roomB).x)/2,
+                                y: (rooms.find(rm=>rm.id===w.roomA).y + rooms.find(rm=>rm.id===w.roomB).y)/2
+                            }] : [];
+
+                            queue.push({
+                                r: neighborId,
+                                c: w.color,
+                                path: newPath
+                            });
+                        }
+                    }
+                }
+            });
+        }
+        return false;
+    }
+
+    function checkSolvability() {
+        isSolvable = runSolver(false);
+        if (isSolvable) {
+            solverStatus.textContent = "Brettet er løsbart.";
+            solverStatus.className = "status-ok";
+            btnSolve.disabled = false;
+        } else {
+            solverStatus.textContent = "Ingen løsning funnet!";
+            solverStatus.className = "status-error";
+            btnSolve.disabled = true;
+        }
+    }
+
+    // === TEGNING ===
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // 1. Vegger
+        walls.forEach(w => {
+            const rA = rooms.find(r => r.id === w.roomA);
+            const rB = rooms.find(r => r.id === w.roomB);
+            if (!rA || !rB) return;
+
+            ctx.beginPath();
+            ctx.moveTo(rA.x, rA.y);
+            ctx.lineTo(rB.x, rB.y);
+            ctx.lineWidth = WALL_WIDTH;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = COLORS[w.color];
+            
+            // Highlight hvis svart (sperret) litt annerledes?
+            if (w.color === 'black') {
+                ctx.setLineDash([5, 5]);
+            } else {
+                ctx.setLineDash([]);
+            }
+            ctx.stroke();
+            ctx.setLineDash([]);
+        });
+
+        // 2. Noder (Rom) - Vises tydelig i Edit, mindre i Play
+        rooms.forEach(r => {
+            // Tegn ikke selve "rommet" som en stor sirkel i play, bare i edit
+            if (appMode === 'edit') {
+                ctx.beginPath();
+                ctx.arc(r.x, r.y, NODE_RADIUS, 0, 2*Math.PI);
+                ctx.fillStyle = r.isStart ? COLORS.startNode : (r.isGoal ? COLORS.goalNode : COLORS.node);
+                ctx.fill();
+                ctx.strokeStyle = '#333';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Start/Mål tekst
+                if (r.isStart) ctx.fillText("START", r.x - 15, r.y - 15);
+                if (r.isGoal) ctx.fillText("MÅL", r.x - 10, r.y - 15);
+            } else {
+                // I Play mode, vis start og mål tekst
+                ctx.fillStyle = "#000";
+                ctx.font = "bold 14px Arial";
+                if (r.isStart) ctx.fillText("INN", r.x - 10, r.y + 5);
+                if (r.isGoal) ctx.fillText("UT", r.x - 10, r.y + 5);
+            }
+        });
+
+        // 3. Spiller (I Play mode)
+        if (appMode === 'play' && currentRoomId) {
+            const r = rooms.find(r => r.id === currentRoomId);
+            if (r) {
+                ctx.beginPath();
+                ctx.arc(r.x, r.y, 12, 0, 2*Math.PI);
+                ctx.fillStyle = COLORS.player;
+                ctx.fill();
+                ctx.lineWidth = 2;
+                ctx.strokeStyle = '#fff';
+                ctx.stroke();
+            }
+        }
+
+        // 4. Løsningsvei (Hvis aktivert)
+        if (showSolution && solutionPath.length > 0) {
+            ctx.beginPath();
+            // Start fra der spilleren er
+            const startR = rooms.find(r => r.id === currentRoomId);
+            if (startR) ctx.moveTo(startR.x, startR.y);
+            
+            solutionPath.forEach(step => {
+                ctx.lineTo(step.x, step.y);
+                // Finn neste rom for linjen
+                // (Forenklet visualisering: linje til midten av veggen, så videre)
+            });
+            
+            ctx.strokeStyle = COLORS.highlight;
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.stroke();
+        }
     }
 
     function translateColor(c) {
         return c === 'red' ? 'RØD' : 'BLÅ';
     }
 
-    // === TEGNING ===
-    function draw() {
-        // Tøm
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // 1. Tegn vegger
-        currentLevel.walls.forEach(wall => {
-            ctx.beginPath();
-            ctx.moveTo(wall.coords[0], wall.coords[1]);
-            ctx.lineTo(wall.coords[2], wall.coords[3]);
-            ctx.lineWidth = 10;
-            ctx.lineCap = 'round';
-            ctx.strokeStyle = (wall.color === 'red') ? COLOR_RED : COLOR_BLUE;
-            ctx.stroke();
-        });
-
-        // 2. Tegn pillars (svarte prikker i hjørnene for estetikk)
-        if (currentLevel.pillars) {
-            currentLevel.pillars.forEach(p => {
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 8, 0, 2*Math.PI);
-                ctx.fillStyle = COLOR_PILLAR;
-                ctx.fill();
-            });
-        }
-
-        // 3. Highlight mulige rom (naboer med gyldig farge)
-        // Finn naboer
-        currentLevel.walls.forEach(w => {
-            let neighborId = -1;
-            if (w.roomA === currentRoomId) neighborId = w.roomB;
-            if (w.roomB === currentRoomId) neighborId = w.roomA;
-
-            if (neighborId !== -1) {
-                // Sjekk om lovlig
-                if (lastWallColor === null || w.color !== lastWallColor) {
-                    const r = currentLevel.rooms.find(rm => rm.id === neighborId);
-                    if (r) {
-                        ctx.beginPath();
-                        ctx.arc(r.x, r.y, 30, 0, 2*Math.PI);
-                        ctx.fillStyle = COLOR_HIGHLIGHT;
-                        ctx.fill();
-                    }
-                }
-            }
-        });
-
-        // 4. Tegn rom-labels (INN/UT)
-        currentLevel.rooms.forEach(r => {
-            if (r.label) {
-                ctx.font = "bold 20px Arial";
-                ctx.fillStyle = "#000";
-                ctx.fillText(r.label, r.x - 20, r.y + 10);
-            }
-        });
-
-        // 5. Tegn Spilleren
-        // Spilleren tegnes i sentrum av currentRoomId
-        const playerRoom = currentLevel.rooms.find(r => r.id === currentRoomId);
-        if (playerRoom) {
-            ctx.beginPath();
-            ctx.arc(playerRoom.x, playerRoom.y, 20, 0, 2*Math.PI);
-            ctx.fillStyle = COLOR_PLAYER;
-            ctx.fill();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#fff';
-            ctx.stroke();
-        }
+    function shakeCanvas() {
+        canvas.style.transform = "translateX(5px)";
+        setTimeout(() => canvas.style.transform = "translateX(-5px)", 50);
+        setTimeout(() => canvas.style.transform = "translateX(0)", 100);
     }
 
-    // === EKSPORT ===
     function downloadImage() {
-        // Tegn uten spiller for bilde
-        const savedRoom = currentRoomId;
-        currentRoomId = -1; // Skjul
+        // Tegn rent bilde for eksport
+        const wasMode = appMode;
+        appMode = 'play'; // Skjul edit noder
         draw();
-
+        
         const link = document.createElement('a');
-        link.download = `rom_labyrint_${Date.now()}.png`;
+        link.download = `labyrint_${Date.now()}.png`;
         link.href = canvas.toDataURL();
         link.click();
 
-        // Sett tilbake
-        currentRoomId = savedRoom;
+        appMode = wasMode;
         draw();
     }
 
     // Start
-    initGame();
+    init();
 });
 
-/* Version: #10 */
+/* Version: #12 */
